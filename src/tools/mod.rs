@@ -48,8 +48,123 @@ pub struct ValidateTool {
     pub rounding_strategy: String,
 }
 
+#[mcp_tool(
+    name = "batch_validate",
+    title = "批量验证算术表达式",
+    description = "同时验证多个算式的计算结果是否与预期值相符。支持批量处理多个表达式，提高验证效率。每个表达式都支持千分位分隔符（美式、欧式、空格、撇号格式）和完整的运算符集合。",
+    destructive_hint = false,
+    idempotent_hint = true,
+    open_world_hint = false,
+    read_only_hint = true
+)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
+pub struct BatchValidateTool {
+    /// 要验证的表达式列表，格式为 "expression|expected" 或 "expression|expected|decimals" 或 "expression|expected|decimals|rounding_strategy"
+    pub expressions: Vec<String>,
+    /// 默认要保留的小数位数（如果表达式中未指定）
+    #[serde(default = "default_decimals")]
+    pub default_decimals: u32,
+    /// 默认百分比舍入策略（如果表达式中未指定）
+    #[serde(default = "default_rounding_strategy")]
+    pub default_rounding_strategy: String,
+}
+
+fn default_decimals() -> u32 {
+    2
+}
+
 fn default_rounding_strategy() -> String {
     "convert_then_round".to_string()
+}
+
+impl BatchValidateTool {
+    pub async fn run_tool(
+        params: Self,
+        _context: &(),
+    ) -> Result<CallToolResult, CallToolError> {
+        let mut results = Vec::new();
+        let mut all_passed = true;
+        
+        for (index, expr_line) in params.expressions.iter().enumerate() {
+            let parts: Vec<&str> = expr_line.split('|').collect();
+            
+            if parts.len() < 2 {
+                results.push(format!("❌ 行 {}: 格式错误 - 需要 'expression|expected' 格式", index + 1));
+                all_passed = false;
+                continue;
+            }
+            
+            let expression = parts[0].trim();
+            let expected = match parts[1].trim().parse::<f64>() {
+                Ok(val) => val,
+                Err(_) => {
+                    results.push(format!("❌ 行 {}: 无效的预期值 '{}'", index + 1, parts[1]));
+                    all_passed = false;
+                    continue;
+                }
+            };
+            
+            let decimals = if parts.len() > 2 {
+                match parts[2].trim().parse::<u32>() {
+                    Ok(val) => val,
+                    Err(_) => {
+                        results.push(format!("❌ 行 {}: 无效的小数位数 '{}'", index + 1, parts[2]));
+                        all_passed = false;
+                        continue;
+                    }
+                }
+            } else {
+                params.default_decimals
+            };
+            
+            let rounding_strategy = if parts.len() > 3 {
+                parts[3].trim().to_string()
+            } else {
+                params.default_rounding_strategy.clone()
+            };
+            
+            let strategy = match parse_rounding_strategy(&rounding_strategy) {
+                Ok(s) => s,
+                Err(_) => {
+                    results.push(format!("❌ 行 {}: 无效的舍入策略 '{}'", index + 1, rounding_strategy));
+                    all_passed = false;
+                    continue;
+                }
+            };
+            
+            let is_valid = validate(expression, expected, decimals, strategy);
+            
+            if is_valid {
+                results.push(format!("✅ 行 {}: {} = {} (通过)", index + 1, expression, expected));
+            } else {
+                // 计算实际值以便显示差异
+                match calculate(expression, decimals, strategy) {
+                    Ok(actual) => {
+                        results.push(format!("❌ 行 {}: {} ≠ {} (实际: {})", index + 1, expression, expected, actual));
+                    }
+                    Err(e) => {
+                        results.push(format!("❌ 行 {}: {} - 计算错误: {:?}", index + 1, expression, e));
+                    }
+                }
+                all_passed = false;
+            }
+        }
+        
+        let summary = if all_passed {
+            format!("🎉 批量验证完成！所有 {} 个表达式均通过验证", params.expressions.len())
+        } else {
+            let passed_count = results.iter().filter(|r| r.starts_with("✅")).count();
+            let total_count = params.expressions.len();
+            format!("⚠️  批量验证完成！{}/{} 个表达式通过验证", passed_count, total_count)
+        };
+        
+        let mut output = vec![summary, "".to_string()];
+        output.extend(results);
+        
+        Ok(CallToolResult::text_content(vec![TextContent::from(
+            output.join("\n")
+        )]))
+    }
 }
 
 fn parse_rounding_strategy(strategy: &str) -> Result<PercentRounding, CallToolError> {
@@ -102,6 +217,7 @@ tool_box!(
     CalculatorTools,
     [
         CalculateTool,
-        ValidateTool
+        ValidateTool,
+        BatchValidateTool
     ]
 );

@@ -81,6 +81,27 @@ npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method
 npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name validate --tool-arg expression="1 + 2" --tool-arg expected=3.0 --tool-arg decimals=0
 ```
 
+### 3. batch_validate 工具
+
+批量验证多个算术表达式的计算结果，提高验证效率。
+
+**参数**:
+- `expressions` (array): 表达式列表，每项格式为 `"expression|expected"` 或 `"expression|expected|decimals"` 或 `"expression|expected|decimals|rounding_strategy"`
+- `default_decimals` (number, 可选): 默认小数位数，默认为2
+- `default_rounding_strategy` (string, 可选): 默认百分比舍入策略
+
+**示例**:
+```bash
+# 批量验证基本表达式
+npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name batch_validate --tool-arg expressions='["1 + 2|3", "2 * 3|6", "10 / 2|5"]' --tool-arg default_decimals=0
+
+# 批量验证带小数的表达式
+npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name batch_validate --tool-arg expressions='["1.234 + 2.567|3.80|2", "50.126%|0.50|2"]'
+
+# 批量验证混合格式
+npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name batch_validate --tool-arg expressions='["1,234.56 + 1.000,44|2235.00|2", "1,000,000.00 + 500,000.00|1500000|0"]'
+```
+
 ## 快速测试
 
 运行包含的测试脚本来验证所有功能：
@@ -95,7 +116,8 @@ npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method
 - 百分比计算（两种策略）
 - 千分位分隔符（四种格式）
 - 复杂表达式
-- 验证功能
+- 单个验证功能
+- 批量验证功能
 - 错误处理
 - 高级功能
 
@@ -114,6 +136,11 @@ npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method
 ### 调用 validate 工具
 ```bash
 npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name validate --tool-arg expression="1.234 + 2.567" --tool-arg expected=3.80 --tool-arg decimals=2
+```
+
+### 调用 batch_validate 工具
+```bash
+npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name batch_validate --tool-arg expressions='["1 + 2|3", "2 * 3|6", "10 / 2|5"]' --tool-arg default_decimals=0
 ```
 
 ## 算法特点

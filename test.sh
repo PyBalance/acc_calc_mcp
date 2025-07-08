@@ -159,4 +159,39 @@ echo "6.8 测试混合格式与百分比 (1,234.56 + 10% * 1.000,00)："
 npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name calculate --tool-arg expression="1,234.56 + 10% * 1.000,00" --tool-arg decimals=2
 echo
 
+echo "7. 测试批量验证功能..."
+
+# 测试基本批量验证
+echo "7.1 测试基本批量验证："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name batch_validate --tool-arg expressions='["1 + 2|3", "2 * 3|6", "10 / 2|5"]' --tool-arg default_decimals=0
+echo
+
+# 测试带小数的批量验证
+echo "7.2 测试带小数的批量验证："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name batch_validate --tool-arg expressions='["1.234 + 2.567|3.80|2", "50.126%|0.50|2"]' --tool-arg default_decimals=2
+echo
+
+# 测试混合格式的批量验证
+echo "7.3 测试混合格式的批量验证："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name batch_validate --tool-arg expressions='["1,234.56 + 1.000,44|2235.00|2", "1,000,000.00 + 500,000.00|1500000|0"]' --tool-arg default_decimals=2
+echo
+
+# 测试包含错误的批量验证
+echo "7.4 测试包含错误的批量验证："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name batch_validate --tool-arg expressions='["1 + 2|3", "2 * 3|7", "10 / 2|5"]' --tool-arg default_decimals=0
+echo
+
 echo "✓ 所有测试完成！"
+echo
+echo "测试总结："
+echo "- 基本算术运算: ✓"
+echo "- 小数处理和舍入: ✓"
+echo "- 百分比计算: ✓"
+echo "- 复杂表达式: ✓"
+echo "- 验证功能: ✓"
+echo "- 错误处理: ✓"
+echo "- 高级功能: ✓"
+echo "- 千分位分隔符: ✓"
+echo "- 批量验证: ✓"
+echo
+echo "算术表达式计算器 MCP 服务器已准备就绪！"

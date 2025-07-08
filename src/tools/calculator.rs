@@ -578,4 +578,38 @@ mod tests {
         // 混合格式与百分比
         assert_eq!(calculate("1,234.56 + 10% * 1.000,00", 2, PercentRounding::ConvertThenRound), Ok(1334.56));
     }
+
+    #[test]
+    fn test_batch_validation_logic() {
+        // 测试批量验证的核心逻辑
+        use crate::tools::*;
+        
+        // 基本批量验证
+        let expressions = vec![
+            "1 + 2|3".to_string(),
+            "2 * 3|6".to_string(),
+            "10 / 2|5".to_string(),
+        ];
+        
+        for expr in &expressions {
+            let parts: Vec<&str> = expr.split('|').collect();
+            let expression = parts[0];
+            let expected: f64 = parts[1].parse().unwrap();
+            assert!(validate(expression, expected, 0, PercentRounding::ConvertThenRound));
+        }
+        
+        // 带小数位的批量验证
+        let expressions_with_decimals = vec![
+            "1.234 + 2.567|3.80|2".to_string(),
+            "50.126%|0.50|2".to_string(),
+        ];
+        
+        for expr in &expressions_with_decimals {
+            let parts: Vec<&str> = expr.split('|').collect();
+            let expression = parts[0];
+            let expected: f64 = parts[1].parse().unwrap();
+            let decimals: u32 = parts[2].parse().unwrap();
+            assert!(validate(expression, expected, decimals, PercentRounding::ConvertThenRound));
+        }
+    }
 }

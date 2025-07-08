@@ -78,6 +78,9 @@ impl ServerHandler for CalculatorHandler {
             CalculatorTools::ValidateTool(params) => {
                 ValidateTool::run_tool(params, &()).await
             }
+            CalculatorTools::BatchValidateTool(params) => {
+                BatchValidateTool::run_tool(params, &()).await
+            }
         }
     }
 }
