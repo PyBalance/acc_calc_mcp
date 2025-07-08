@@ -1,4 +1,4 @@
-name: Rust
+name: Rust CI
 
 on:
   push:
@@ -10,18 +10,19 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
-    runs-on: windows-latest
+  build_and_test:
+    # 定义构建矩阵
+    strategy:
+      matrix:
+        # 在这里列出所有你想要构建的目标系统
+        os: [ubuntu-latest, macos-latest]
+    
+    # 使用矩阵中的变量来设置运行环境
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
     - name: Build
-      run: cargo build --verbose --release
+      run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: acc-calc-mcp-windows
-        path: target/release/acc_calc_mcp.exe
