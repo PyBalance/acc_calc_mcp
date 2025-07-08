@@ -11,18 +11,36 @@ env:
 
 jobs:
   build_and_test:
-    # 定义构建矩阵
     strategy:
       matrix:
-        # 在这里列出所有你想要构建的目标系统
-        os: [ubuntu-latest, macos-latest]
+        # 添加 windows-latest 到矩阵中
+        os: [ubuntu-latest, macos-latest, windows-latest]
     
-    # 使用矩阵中的变量来设置运行环境
     runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
+
+    - name: Build for release
+      run: cargo build --release --verbose
+
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --release --verbose
+      
+    # ---- Linux & macOS ----
+    # 如果操作系统不是 Windows，则运行此步骤
+    - name: Upload Artifact (Linux/macOS)
+      if: runner.os != 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: acc_calc_mcp-${{ matrix.os }}
+        path: target/release/acc_calc_mcp
+        
+    # ---- Windows ----
+    # 如果操作系统是 Windows，则运行此步骤
+    - name: Upload Artifact (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: acc_calc_mcp-${{ matrix.os }}
+        path: target/release/acc_calc_mcp.exe
