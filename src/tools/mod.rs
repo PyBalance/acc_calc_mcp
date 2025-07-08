@@ -89,7 +89,7 @@ impl BatchValidateTool {
             let parts: Vec<&str> = expr_line.split('|').collect();
             
             if parts.len() < 2 {
-                results.push(format!("❌ 行 {}: 格式错误 - 需要 'expression|expected' 格式", index + 1));
+                results.push(format!("行 {}: 格式错误 - 需要 'expression|expected' 格式", index + 1));
                 all_passed = false;
                 continue;
             }
@@ -99,7 +99,7 @@ impl BatchValidateTool {
                 match parts[2].trim().parse::<u32>() {
                     Ok(val) => val,
                     Err(_) => {
-                        results.push(format!("❌ 行 {}: 无效的小数位数 '{}'", index + 1, parts[2]));
+                        results.push(format!("行 {}: 无效的小数位数 '{}'", index + 1, parts[2]));
                         all_passed = false;
                         continue;
                     }
@@ -117,7 +117,7 @@ impl BatchValidateTool {
             let strategy = match parse_percent_rounding(&percent_rounding) {
                 Ok(s) => s,
                 Err(_) => {
-                    results.push(format!("❌ 行 {}: 无效的百分数处理策略 '{}'", index + 1, percent_rounding));
+                    results.push(format!("行 {}: 无效的百分数处理策略 '{}'", index + 1, percent_rounding));
                     all_passed = false;
                     continue;
                 }
@@ -126,7 +126,7 @@ impl BatchValidateTool {
             let expected = match parse_expected_value(parts[1].trim(), decimals, strategy) {
                 Ok(val) => val,
                 Err(_) => {
-                    results.push(format!("❌ 行 {}: 无效的预期值 '{}'", index + 1, parts[1]));
+                    results.push(format!("行 {}: 无效的预期值 '{}'", index + 1, parts[1]));
                     all_passed = false;
                     continue;
                 }
@@ -135,15 +135,15 @@ impl BatchValidateTool {
             let is_valid = validate(expression, expected, decimals, strategy);
             
             if is_valid {
-                results.push(format!("✅ 行 {}: {} = {} (通过)", index + 1, expression, expected));
+                results.push(format!("行 {}: {} = {} (通过)", index + 1, expression, expected));
             } else {
                 // 计算实际值以便显示差异
                 match calculate(expression, decimals, strategy) {
                     Ok(actual) => {
-                        results.push(format!("❌ 行 {}: {} ≠ {} (实际: {})", index + 1, expression, expected, actual));
+                        results.push(format!("行 {}: {} ≠ {} (实际: {})", index + 1, expression, expected, actual));
                     }
                     Err(e) => {
-                        results.push(format!("❌ 行 {}: {} - 计算错误: {:?}", index + 1, expression, e));
+                        results.push(format!("行 {}: {} - 计算错误: {:?}", index + 1, expression, e));
                     }
                 }
                 all_passed = false;
@@ -151,11 +151,11 @@ impl BatchValidateTool {
         }
         
         let summary = if all_passed {
-            format!("🎉 批量验证完成！所有 {} 个表达式均通过验证", params.expressions.len())
+            format!("批量验证完成！所有 {} 个表达式均通过验证", params.expressions.len())
         } else {
-            let passed_count = results.iter().filter(|r| r.starts_with("✅")).count();
+            let passed_count = results.iter().filter(|r| r.contains("(通过)")).count();
             let total_count = params.expressions.len();
-            format!("⚠️  批量验证完成！{}/{} 个表达式通过验证", passed_count, total_count)
+            format!("批量验证完成！{}/{} 个表达式通过验证", passed_count, total_count)
         };
         
         let mut output = vec![summary, "".to_string()];
@@ -272,7 +272,7 @@ impl ValidateTool {
                 params.expression,
                 params.expected,
                 expected_value,
-                if is_valid { "✓ 通过" } else { "✗ 失败" }
+                if is_valid { "通过" } else { "失败" }
             )
         )]))
     }
