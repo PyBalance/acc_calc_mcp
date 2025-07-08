@@ -51,7 +51,7 @@ pub struct ValidateTool {
 #[mcp_tool(
     name = "batch_validate",
     title = "批量验证算术表达式",
-    description = "同时验证多个算式的计算结果是否与预期值相符。支持批量处理多个表达式，提高验证效率。每个表达式都支持千分位分隔符（美式、欧式、空格、撇号格式）和完整的运算符集合。",
+    description = "同时验证多个算式的计算结果是否与预期值相符。支持批量处理多个表达式，提高验证效率。每个表达式都支持千分位分隔符（美式、欧式、空格、撇号格式）和完整的运算符集合。支持为每个表达式添加标记（如'流动资产合计'）以便识别错误的算式。",
     destructive_hint = false,
     idempotent_hint = true,
     open_world_hint = false,
@@ -59,14 +59,14 @@ pub struct ValidateTool {
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct BatchValidateTool {
-    /// 要验证的表达式列表，格式为 "expression|expected" 或 "expression|expected|decimals" 或 "expression|expected|decimals|percent_rounding"
+    /// 要验证的表达式列表，格式为 "expression|expected" 或 "expression|expected|label"
     pub expressions: Vec<String>,
-    /// 默认要保留的小数位数（如果表达式中未指定）
+    /// 要保留的小数位数
     #[serde(default = "default_decimals")]
-    pub default_decimals: u32,
-    /// 默认百分数处理策略（仅当表达式包含百分数时有效，如果表达式中未指定）：divide_by_100_then_round（先除以100后舍入）或 round_then_divide_by_100（先舍入后除以100），默认是 divide_by_100_then_round
+    pub decimals: u32,
+    /// 百分数处理策略（仅当表达式包含百分数时有效）：divide_by_100_then_round（先除以100后舍入）或 round_then_divide_by_100（先舍入后除以100），默认是 divide_by_100_then_round
     #[serde(default = "default_percent_rounding")]
-    pub default_percent_rounding: String,
+    pub percent_rounding: String,
 }
 
 fn default_decimals() -> u32 {
@@ -95,55 +95,49 @@ impl BatchValidateTool {
             }
             
             let expression = parts[0].trim();
-            let decimals = if parts.len() > 2 {
-                match parts[2].trim().parse::<u32>() {
-                    Ok(val) => val,
-                    Err(_) => {
-                        results.push(format!("行 {}: 无效的小数位数 '{}'", index + 1, parts[2]));
-                        all_passed = false;
-                        continue;
-                    }
-                }
+            
+            let label = if parts.len() > 2 {
+                parts[2].trim().to_string()
             } else {
-                params.default_decimals
+                String::new()
             };
             
-            let percent_rounding = if parts.len() > 3 {
-                parts[3].trim().to_string()
+            let label_prefix = if label.is_empty() {
+                String::new()
             } else {
-                params.default_percent_rounding.clone()
+                format!("[{}] ", label)
             };
             
-            let strategy = match parse_percent_rounding(&percent_rounding) {
+            let strategy = match parse_percent_rounding(&params.percent_rounding) {
                 Ok(s) => s,
                 Err(_) => {
-                    results.push(format!("行 {}: 无效的百分数处理策略 '{}'", index + 1, percent_rounding));
+                    results.push(format!("行 {}: {}无效的百分数处理策略 '{}'", index + 1, label_prefix, params.percent_rounding));
                     all_passed = false;
                     continue;
                 }
             };
             
-            let expected = match parse_expected_value(parts[1].trim(), decimals, strategy) {
+            let expected = match parse_expected_value(parts[1].trim(), params.decimals, strategy) {
                 Ok(val) => val,
                 Err(_) => {
-                    results.push(format!("行 {}: 无效的预期值 '{}'", index + 1, parts[1]));
+                    results.push(format!("行 {}: {}无效的预期值 '{}'", index + 1, label_prefix, parts[1]));
                     all_passed = false;
                     continue;
                 }
             };
             
-            let is_valid = validate(expression, expected, decimals, strategy);
+            let is_valid = validate(expression, expected, params.decimals, strategy);
             
             if is_valid {
-                results.push(format!("行 {}: {} = {} (通过)", index + 1, expression, expected));
+                results.push(format!("行 {}: {}{} = {} (通过)", index + 1, label_prefix, expression, expected));
             } else {
                 // 计算实际值以便显示差异
-                match calculate(expression, decimals, strategy) {
+                match calculate(expression, params.decimals, strategy) {
                     Ok(actual) => {
-                        results.push(format!("行 {}: {} ≠ {} (实际: {})", index + 1, expression, expected, actual));
+                        results.push(format!("行 {}: {}{} ≠ {} (实际: {})", index + 1, label_prefix, expression, expected, actual));
                     }
                     Err(e) => {
-                        results.push(format!("行 {}: {} - 计算错误: {:?}", index + 1, expression, e));
+                        results.push(format!("行 {}: {}{} - 计算错误: {:?}", index + 1, label_prefix, expression, e));
                     }
                 }
                 all_passed = false;
