@@ -19,11 +19,10 @@ pub use rust_mcp_sdk::tool_box;
 pub struct CalculateTool {
     /// 要计算的算术表达式（运算符支持：加、减、乘、除、括号和百分号），支持千分位分隔符（美式: 1,234.56, 欧式: 1.234,56, 空格: 1 234.56, 撇号: 1'234.56）
     pub expression: String,
-    /// 计算前和结果要保留的小数位数
-    pub decimals: u32,
-    /// 百分数处理策略（仅当表达式包含百分数时有效）：divide_by_100_then_round（先除以100后舍入）或 round_then_divide_by_100（先舍入后除以100），默认是 divide_by_100_then_round
-    #[serde(default = "default_percent_rounding")]
-    pub percent_rounding: String,
+    /// 计算前和结果要保留的小数位数，默认为2
+    pub decimals: Option<u32>,
+    /// 百分数处理策略（仅当表达式包含百分数时有效）：divide_by_100_then_round（先除以100后舍入）或 round_then_divide_by_100（先舍入后除以100），默认是 round_then_divide_by_100
+    pub percent_rounding: Option<String>,
 }
 
 #[mcp_tool(
@@ -41,11 +40,10 @@ pub struct ValidateTool {
     pub expression: String,
     /// 预期的结果值（支持百分数和千分位格式，如：50.5%, 1,234.56, 1.234,56）
     pub expected: String,
-    /// 要保留的小数位数
-    pub decimals: u32,
-    /// 百分数处理策略（仅当表达式或预期值包含百分数时有效）：divide_by_100_then_round（先除以100后舍入）或 round_then_divide_by_100（先舍入后除以100), 默认是 divide_by_100_then_round
-    #[serde(default = "default_percent_rounding")]
-    pub percent_rounding: String,
+    /// 要保留的小数位数，默认为2
+    pub decimals: Option<u32>,
+    /// 百分数处理策略（仅当表达式或预期值包含百分数时有效）：divide_by_100_then_round（先除以100后舍入）或 round_then_divide_by_100（先舍入后除以100），默认是 divide_by_100_then_round (0.126% → 50.13% → 0.5013)
+    pub percent_rounding: Option<String>,
 }
 
 #[mcp_tool(
@@ -61,21 +59,12 @@ pub struct ValidateTool {
 pub struct BatchValidateTool {
     /// 要验证的表达式列表，格式为 "expression|expected" 或 "expression|expected|label"
     pub expressions: Vec<String>,
-    /// 要保留的小数位数
-    #[serde(default = "default_decimals")]
-    pub decimals: u32,
-    /// 百分数处理策略（仅当表达式包含百分数时有效）：divide_by_100_then_round（先除以100后舍入）或 round_then_divide_by_100（先舍入后除以100），默认是 divide_by_100_then_round
-    #[serde(default = "default_percent_rounding")]
-    pub percent_rounding: String,
+    /// 要保留的小数位数，默认为2
+    pub decimals: Option<u32>,
+    /// 百分数处理策略（仅当表达式包含百分数时有效）：divide_by_100_then_round（先除以100后舍入）或 round_then_divide_by_100（先舍入后除以100），默认是 round_then_divide_by_100
+    pub percent_rounding: Option<String>,
 }
 
-fn default_decimals() -> u32 {
-    2
-}
-
-fn default_percent_rounding() -> String {
-    "divide_by_100_then_round".to_string()
-}
 
 impl BatchValidateTool {
     pub async fn run_tool(
@@ -108,16 +97,18 @@ impl BatchValidateTool {
                 format!("[{}] ", label)
             };
             
-            let strategy = match parse_percent_rounding(&params.percent_rounding) {
+            let percent_rounding = params.percent_rounding.as_deref().unwrap_or("round_then_divide_by_100");
+            let strategy = match parse_percent_rounding(percent_rounding) {
                 Ok(s) => s,
                 Err(_) => {
-                    results.push(format!("行 {}: {}无效的百分数处理策略 '{}'", index + 1, label_prefix, params.percent_rounding));
+                    results.push(format!("行 {}: {}无效的百分数处理策略 '{}'", index + 1, label_prefix, percent_rounding));
                     all_passed = false;
                     continue;
                 }
             };
             
-            let expected = match parse_expected_value(parts[1].trim(), params.decimals, strategy) {
+            let decimals = params.decimals.unwrap_or(2);
+            let expected = match parse_expected_value(parts[1].trim(), decimals, strategy) {
                 Ok(val) => val,
                 Err(_) => {
                     results.push(format!("行 {}: {}无效的预期值 '{}'", index + 1, label_prefix, parts[1]));
@@ -126,13 +117,13 @@ impl BatchValidateTool {
                 }
             };
             
-            let is_valid = validate(expression, expected, params.decimals, strategy);
+            let is_valid = validate(expression, expected, decimals, strategy);
             
             if is_valid {
                 results.push(format!("行 {}: {}{} = {} (通过)", index + 1, label_prefix, expression, expected));
             } else {
                 // 计算实际值以便显示差异
-                match calculate(expression, params.decimals, strategy) {
+                match calculate(expression, decimals, strategy) {
                     Ok(actual) => {
                         results.push(format!("行 {}: {}{} ≠ {} (实际: {})", index + 1, label_prefix, expression, expected, actual));
                     }
@@ -237,9 +228,11 @@ impl CalculateTool {
         params: Self,
         _context: &(),
     ) -> Result<CallToolResult, CallToolError> {
-        let strategy = parse_percent_rounding(&params.percent_rounding)?;
+        let percent_rounding = params.percent_rounding.as_deref().unwrap_or("round_then_divide_by_100");
+        let strategy = parse_percent_rounding(percent_rounding)?;
+        let decimals = params.decimals.unwrap_or(2);
         
-        let result = calculate(&params.expression, params.decimals, strategy)
+        let result = calculate(&params.expression, decimals, strategy)
             .map_err(|e| CallToolError::new(crate::error::ServiceError::from(e)))?;
         
         Ok(CallToolResult::text_content(vec![TextContent::from(
@@ -253,12 +246,14 @@ impl ValidateTool {
         params: Self,
         _context: &(),
     ) -> Result<CallToolResult, CallToolError> {
-        let strategy = parse_percent_rounding(&params.percent_rounding)?;
+        let percent_rounding = params.percent_rounding.as_deref().unwrap_or("round_then_divide_by_100");
+        let strategy = parse_percent_rounding(percent_rounding)?;
+        let decimals = params.decimals.unwrap_or(2);
         
         // 解析预期值，支持百分数和千分位
-        let expected_value = parse_expected_value(&params.expected, params.decimals, strategy)?;
+        let expected_value = parse_expected_value(&params.expected, decimals, strategy)?;
         
-        let is_valid = validate(&params.expression, expected_value, params.decimals, strategy);
+        let is_valid = validate(&params.expression, expected_value, decimals, strategy);
         
         Ok(CallToolResult::text_content(vec![TextContent::from(
             format!(
