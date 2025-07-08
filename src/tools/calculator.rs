@@ -1,0 +1,441 @@
+//! # 自定义规则的算术表达式计算器
+//!
+//! 该程序实现了两个核心功能：
+//! 1. `calculate`: 根据自定义规则计算一个字符串形式的算术表达式。
+//!    - 规则1：所有数字在参与运算前，必须根据指定小数位数进行四舍五入。
+//!    - 规则2：支持加、减、乘、除、括号和百分号。
+//!    - 规则3：计算结果也需要进行最终的四舍五入。
+//! 2. `validate`: 验证一个算式的计算结果是否与预期值相符。
+//!
+//! 核心算法采用"调度场算法"(Shunting-yard Algorithm)，分为三步：
+//! 1. **词法分析 (Tokenization)**: 将字符串分解为词元（Token），并在此阶段完成数字的预先舍入和百分比处理。
+//! 2. **语法分析 (Parsing)**: 使用调度场算法将中缀表达式词元序列转换为后缀表达式（逆波兰表示法, RPN）。
+//! 3. **求值 (Evaluation)**: 计算后缀表达式得出结果。
+
+use std::iter::Peekable;
+use std::str::Chars;
+
+// --- 公开的枚举和结构体 ---
+
+/// 定义词元（Token）类型
+/// `Clone` is needed for the shunting-yard algorithm.
+/// `PartialEq` and `Debug` are for testing and debugging.
+#[derive(Debug, PartialEq, Clone)]
+enum Token {
+    Number(f64),
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    LeftParen,
+    RightParen,
+}
+
+/// 定义百分比的舍入策略
+/// 用户可以通过这个参数决定如何处理百分比
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum PercentRounding {
+    /// 先将数字转换为百分比（除以100），然后再进行舍入。
+    /// 例如: 50.126% with round 2 -> 0.50126 -> 0.50
+    ConvertThenRound,
+    /// 先对数字进行舍入，然后再转换为百分比（除以100）。
+    /// 例如: 50.126% with round 2 -> 50.13 -> 0.5013
+    RoundThenConvert,
+}
+
+/// 定义可能出现的错误类型
+#[derive(Debug, PartialEq)]
+pub enum CalcError {
+    InvalidCharacter(char),
+    MismatchedParens,
+    InvalidExpression,
+    DivisionByZero,
+    /// 当表达式不完整时（例如 "5 * "）
+    UnexpectedEndOfExpression,
+}
+
+// --- 核心功能函数 ---
+
+/// 函数1：计算
+///
+/// # 参数
+/// * `expr` - 要计算的算式字符串
+/// * `decimals` - 要保留的小数位数
+/// * `rounding_strategy` - 处理百分比的舍入策略
+///
+/// # 返回
+/// * `Result<f64, CalcError>` - 计算结果或错误
+pub fn calculate(
+    expr: &str,
+    decimals: u32,
+    rounding_strategy: PercentRounding,
+) -> Result<f64, CalcError> {
+    // 步骤 1: 词法分析与预先舍入
+    let tokens = tokenize_and_round(expr, decimals, rounding_strategy)?;
+
+    // 步骤 2: 转换为后缀表达式 (Shunting-yard)
+    let rpn_queue = shunt_to_rpn(&tokens)?;
+
+    // 步骤 3: 求值
+    let result = evaluate_rpn(&rpn_queue)?;
+
+    // 步骤 4: 最终结果舍入
+    Ok(round_value(result, decimals))
+}
+
+/// 函数2：验证
+///
+/// # 参数
+/// * `expr` - 要计算的算式字符串
+/// * `expected` - 预期的结果
+/// * `decimals` - 要保留的小数位数
+/// * `rounding_strategy` - 处理百分比的舍入策略
+///
+/// # 返回
+/// * `bool` - 算式计算结果是否与预期一致
+pub fn validate(
+    expr: &str,
+    expected: f64,
+    decimals: u32,
+    rounding_strategy: PercentRounding,
+) -> bool {
+    // 使用一个小的容差来比较浮点数，避免精度问题
+    const EPSILON: f64 = 1e-9;
+
+    match calculate(expr, decimals, rounding_strategy) {
+        Ok(actual) => (actual - expected).abs() < EPSILON,
+        Err(_) => false, // 如果计算出错，则验证失败
+    }
+}
+
+// --- 辅助函数 ---
+
+/// 辅助函数：对一个 f64 值进行四舍五入
+fn round_value(value: f64, decimals: u32) -> f64 {
+    let factor = 10f64.powi(decimals as i32);
+    (value * factor).round() / factor
+}
+
+/// 辅助函数：获取操作符的优先级
+fn precedence(token: &Token) -> u8 {
+    match token {
+        Token::Add | Token::Subtract => 1,
+        Token::Multiply | Token::Divide => 2,
+        _ => 0,
+    }
+}
+
+// --- 算法核心实现 ---
+
+/// 步骤 1: 词法分析与预先舍入
+fn tokenize_and_round(
+    expr: &str,
+    decimals: u32,
+    rounding_strategy: PercentRounding,
+) -> Result<Vec<Token>, CalcError> {
+    let mut tokens = Vec::new();
+    let mut chars = expr.chars().peekable();
+
+    while let Some(&c) = chars.peek() {
+        match c {
+            '0'..='9' | '.' => {
+                let num_str = consume_number(&mut chars);
+                let mut num = num_str.parse::<f64>().map_err(|_| CalcError::InvalidExpression)?;
+
+                // 检查百分号
+                if let Some('%') = chars.peek() {
+                    chars.next(); // consume '%'
+                    num = match rounding_strategy {
+                        PercentRounding::ConvertThenRound => {
+                            let converted = num / 100.0;
+                            round_value(converted, decimals)
+                        }
+                        PercentRounding::RoundThenConvert => {
+                            let rounded = round_value(num, decimals);
+                            rounded / 100.0
+                        }
+                    };
+                } else {
+                    // 普通数字的舍入
+                    num = round_value(num, decimals);
+                }
+                tokens.push(Token::Number(num));
+            }
+            '+' => {
+                tokens.push(Token::Add);
+                chars.next();
+            }
+            // 处理负号和减号的区别
+            '-' => {
+                let is_unary = tokens.is_empty() || matches!(tokens.last(), Some(Token::LeftParen) | Some(Token::Add) | Some(Token::Subtract) | Some(Token::Multiply) | Some(Token::Divide));
+                chars.next(); // consume '-'
+                if is_unary {
+                    // This is a negative number
+                    let num_str = consume_number(&mut chars);
+                    if num_str.is_empty() {
+                        return Err(CalcError::InvalidExpression);
+                    }
+                    let mut num = -num_str.parse::<f64>().map_err(|_| CalcError::InvalidExpression)?;
+                     // Check for percentage on negative number
+                    if let Some('%') = chars.peek() {
+                        chars.next(); // consume '%'
+                         num = match rounding_strategy {
+                            PercentRounding::ConvertThenRound => round_value(num / 100.0, decimals),
+                            PercentRounding::RoundThenConvert => round_value(num, decimals) / 100.0,
+                        };
+                    } else {
+                        num = round_value(num, decimals);
+                    }
+                    tokens.push(Token::Number(num));
+                } else {
+                    // This is a subtraction operator
+                    tokens.push(Token::Subtract);
+                }
+            }
+            '*' => {
+                tokens.push(Token::Multiply);
+                chars.next();
+            }
+            '/' => {
+                tokens.push(Token::Divide);
+                chars.next();
+            }
+            '(' => {
+                tokens.push(Token::LeftParen);
+                chars.next();
+            }
+            ')' => {
+                tokens.push(Token::RightParen);
+                chars.next();
+            }
+            ' ' | '\t' | '\n' => {
+                // Skip whitespace
+                chars.next();
+            }
+            _ => return Err(CalcError::InvalidCharacter(c)),
+        }
+    }
+
+    Ok(tokens)
+}
+
+/// 辅助函数：从字符流中消费一个完整的数字字符串
+fn consume_number(chars: &mut Peekable<Chars>) -> String {
+    let mut num_str = String::new();
+    while let Some(&c) = chars.peek() {
+        if c.is_ascii_digit() || c == '.' {
+            num_str.push(c);
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    num_str
+}
+
+
+/// 步骤 2: 将词元序列转换为后缀表达式 (Shunting-yard)
+fn shunt_to_rpn(tokens: &[Token]) -> Result<Vec<Token>, CalcError> {
+    let mut output_queue: Vec<Token> = Vec::new();
+    let mut operator_stack: Vec<Token> = Vec::new();
+
+    for token in tokens.iter().cloned() {
+        match token {
+            Token::Number(_) => output_queue.push(token),
+            Token::LeftParen => operator_stack.push(token),
+            Token::RightParen => {
+                while let Some(top_op) = operator_stack.last() {
+                    if matches!(top_op, Token::LeftParen) {
+                        break;
+                    }
+                    output_queue.push(operator_stack.pop().unwrap());
+                }
+                if operator_stack.pop().is_none() {
+                    // Mismatched parentheses
+                    return Err(CalcError::MismatchedParens);
+                }
+            }
+            // Operator case
+            _ => {
+                while let Some(top_op) = operator_stack.last() {
+                    if matches!(top_op, Token::LeftParen) {
+                        break;
+                    }
+                    if precedence(top_op) >= precedence(&token) {
+                        output_queue.push(operator_stack.pop().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+                operator_stack.push(token);
+            }
+        }
+    }
+
+    // Pop remaining operators from the stack to the queue
+    while let Some(op) = operator_stack.pop() {
+        if matches!(op, Token::LeftParen) {
+            return Err(CalcError::MismatchedParens);
+        }
+        output_queue.push(op);
+    }
+
+    Ok(output_queue)
+}
+
+/// 步骤 3: 求值后缀表达式
+fn evaluate_rpn(rpn_queue: &[Token]) -> Result<f64, CalcError> {
+    let mut operand_stack: Vec<f64> = Vec::new();
+
+    for token in rpn_queue.iter().cloned() {
+        match token {
+            Token::Number(n) => operand_stack.push(n),
+            _ => {
+                let rhs = operand_stack.pop().ok_or(CalcError::InvalidExpression)?;
+                let lhs = operand_stack.pop().ok_or(CalcError::InvalidExpression)?;
+                let result = match token {
+                    Token::Add => lhs + rhs,
+                    Token::Subtract => lhs - rhs,
+                    Token::Multiply => lhs * rhs,
+                    Token::Divide => {
+                        if rhs.abs() < 1e-9 {
+                            return Err(CalcError::DivisionByZero);
+                        }
+                        lhs / rhs
+                    }
+                    _ => unreachable!(), // Should not happen with a valid RPN queue
+                };
+                operand_stack.push(result);
+            }
+        }
+    }
+
+    if operand_stack.len() == 1 {
+        Ok(operand_stack.pop().unwrap())
+    } else {
+        Err(CalcError::InvalidExpression)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic_arithmetic() {
+        assert_eq!(calculate("1 + 2", 0, PercentRounding::ConvertThenRound), Ok(3.0));
+        assert_eq!(calculate("5 - 3", 0, PercentRounding::ConvertThenRound), Ok(2.0));
+        assert_eq!(calculate("2 * 3", 0, PercentRounding::ConvertThenRound), Ok(6.0));
+        assert_eq!(calculate("8 / 2", 0, PercentRounding::ConvertThenRound), Ok(4.0));
+    }
+
+    #[test]
+    fn test_parentheses() {
+        assert_eq!(calculate("(1 + 2) * 3", 0, PercentRounding::ConvertThenRound), Ok(9.0));
+        assert_eq!(calculate("2 * (3 + 4)", 0, PercentRounding::ConvertThenRound), Ok(14.0));
+        assert_eq!(calculate("((1 + 2) * 3) / 3", 0, PercentRounding::ConvertThenRound), Ok(3.0));
+    }
+
+    #[test]
+    fn test_operator_precedence() {
+        assert_eq!(calculate("1 + 2 * 3", 0, PercentRounding::ConvertThenRound), Ok(7.0));
+        assert_eq!(calculate("2 * 3 + 1", 0, PercentRounding::ConvertThenRound), Ok(7.0));
+        assert_eq!(calculate("6 / 2 + 1", 0, PercentRounding::ConvertThenRound), Ok(4.0));
+    }
+
+    #[test]
+    fn test_rounding() {
+        assert_eq!(calculate("1.234 + 2.567", 2, PercentRounding::ConvertThenRound), Ok(3.80));
+        assert_eq!(calculate("1.235 + 2.564", 2, PercentRounding::ConvertThenRound), Ok(3.80));
+        assert_eq!(calculate("1.999 + 0.001", 2, PercentRounding::ConvertThenRound), Ok(2.00));
+    }
+
+    #[test]
+    fn test_percentage_convert_then_round() {
+        assert_eq!(calculate("50%", 2, PercentRounding::ConvertThenRound), Ok(0.50));
+        assert_eq!(calculate("50.126%", 2, PercentRounding::ConvertThenRound), Ok(0.50));
+        assert_eq!(calculate("50.126% + 25%", 2, PercentRounding::ConvertThenRound), Ok(0.75));
+    }
+
+    #[test]
+    fn test_percentage_round_then_convert() {
+        assert_eq!(calculate("50.126%", 2, PercentRounding::RoundThenConvert), Ok(0.50));
+        assert_eq!(calculate("50.124%", 2, PercentRounding::RoundThenConvert), Ok(0.50));
+    }
+
+    #[test]
+    fn test_negative_numbers() {
+        assert_eq!(calculate("-5 + 3", 0, PercentRounding::ConvertThenRound), Ok(-2.0));
+        assert_eq!(calculate("5 + -3", 0, PercentRounding::ConvertThenRound), Ok(2.0));
+        assert_eq!(calculate("-5 * -3", 0, PercentRounding::ConvertThenRound), Ok(15.0));
+        assert_eq!(calculate("(-5) * 3", 0, PercentRounding::ConvertThenRound), Ok(-15.0));
+    }
+
+    #[test]
+    fn test_negative_percentage() {
+        assert_eq!(calculate("-50%", 2, PercentRounding::ConvertThenRound), Ok(-0.50));
+        assert_eq!(calculate("-50.126%", 2, PercentRounding::ConvertThenRound), Ok(-0.50));
+    }
+
+    #[test]
+    fn test_decimal_numbers() {
+        assert_eq!(calculate("1.5 + 2.5", 1, PercentRounding::ConvertThenRound), Ok(4.0));
+        assert_eq!(calculate("3.14 * 2", 2, PercentRounding::ConvertThenRound), Ok(6.28));
+        assert_eq!(calculate("0.1 + 0.2", 1, PercentRounding::ConvertThenRound), Ok(0.3));
+    }
+
+    #[test]
+    fn test_complex_expressions() {
+        assert_eq!(calculate("(1.5 + 2.5) * 3 - 1", 1, PercentRounding::ConvertThenRound), Ok(11.0));
+        assert_eq!(calculate("100% - 50% + 25%", 2, PercentRounding::ConvertThenRound), Ok(0.75));
+        assert_eq!(calculate("(50% + 25%) * 2", 2, PercentRounding::ConvertThenRound), Ok(1.50));
+    }
+
+    #[test]
+    fn test_division_by_zero() {
+        assert_eq!(calculate("5 / 0", 0, PercentRounding::ConvertThenRound), Err(CalcError::DivisionByZero));
+        assert_eq!(calculate("1 / (2 - 2)", 0, PercentRounding::ConvertThenRound), Err(CalcError::DivisionByZero));
+    }
+
+    #[test]
+    fn test_invalid_expressions() {
+        assert_eq!(calculate("1 +", 0, PercentRounding::ConvertThenRound), Err(CalcError::InvalidExpression));
+        assert_eq!(calculate("* 2", 0, PercentRounding::ConvertThenRound), Err(CalcError::InvalidExpression));
+        assert_eq!(calculate("1 + + 2", 0, PercentRounding::ConvertThenRound), Err(CalcError::InvalidExpression));
+    }
+
+    #[test]
+    fn test_mismatched_parentheses() {
+        assert_eq!(calculate("(1 + 2", 0, PercentRounding::ConvertThenRound), Err(CalcError::MismatchedParens));
+        assert_eq!(calculate("1 + 2)", 0, PercentRounding::ConvertThenRound), Err(CalcError::MismatchedParens));
+        assert_eq!(calculate("((1 + 2)", 0, PercentRounding::ConvertThenRound), Err(CalcError::MismatchedParens));
+    }
+
+    #[test]
+    fn test_invalid_characters() {
+        assert_eq!(calculate("1 + 2 @", 0, PercentRounding::ConvertThenRound), Err(CalcError::InvalidCharacter('@')));
+        assert_eq!(calculate("1 & 2", 0, PercentRounding::ConvertThenRound), Err(CalcError::InvalidCharacter('&')));
+    }
+
+    #[test]
+    fn test_whitespace_handling() {
+        assert_eq!(calculate("  1  +  2  ", 0, PercentRounding::ConvertThenRound), Ok(3.0));
+        assert_eq!(calculate("1\t+\t2", 0, PercentRounding::ConvertThenRound), Ok(3.0));
+        assert_eq!(calculate("1\n+\n2", 0, PercentRounding::ConvertThenRound), Ok(3.0));
+    }
+
+    #[test]
+    fn test_validate_function() {
+        assert!(validate("1 + 2", 3.0, 0, PercentRounding::ConvertThenRound));
+        assert!(validate("1.234 + 2.567", 3.80, 2, PercentRounding::ConvertThenRound));
+        assert!(!validate("1 + 2", 4.0, 0, PercentRounding::ConvertThenRound));
+        assert!(!validate("1 / 0", 0.0, 0, PercentRounding::ConvertThenRound));
+    }
+
+    #[test]
+    fn test_floating_point_precision() {
+        // Test that we handle floating point precision issues properly
+        assert!(validate("0.1 + 0.2", 0.3, 1, PercentRounding::ConvertThenRound));
+        assert!(validate("0.1 + 0.1 + 0.1", 0.3, 1, PercentRounding::ConvertThenRound));
+    }
+}
