@@ -43,7 +43,7 @@ cargo run
 **参数**:
 - `expression` (string): 要计算的算术表达式（支持多种千分位格式）
 - `decimals` (number): 要保留的小数位数
-- `rounding_strategy` (string, 可选): 百分比舍入策略
+- `rounding_strategy` (string, 可选): 百分比舍入策略（仅当表达式包含百分数时有效）
   - `"convert_then_round"` (默认): 先转换为小数后舍入
   - `"round_then_convert"`: 先舍入后转换为小数
 
@@ -71,14 +71,20 @@ npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method
 
 **参数**:
 - `expression` (string): 要验证的算术表达式（支持多种千分位格式）
-- `expected` (number): 预期的结果值
+- `expected` (string): 预期的结果值（支持百分数和千分位格式，如：50.5%, 1,234.56, 1.234,56）
 - `decimals` (number): 要保留的小数位数
-- `rounding_strategy` (string, 可选): 百分比舍入策略
+- `rounding_strategy` (string, 可选): 百分比舍入策略（仅当表达式或预期值包含百分数时有效）
 
 **示例**:
 ```bash
 # 验证计算结果
-npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name validate --tool-arg expression="1 + 2" --tool-arg expected=3.0 --tool-arg decimals=0
+npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name validate --tool-arg expression="1 + 2" --tool-arg expected="3" --tool-arg decimals=0
+
+# 验证百分比结果
+npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name validate --tool-arg expression="25% + 25%" --tool-arg expected="50%" --tool-arg decimals=2
+
+# 验证千分位结果
+npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name validate --tool-arg expression="500 + 500" --tool-arg expected="1,000" --tool-arg decimals=0
 ```
 
 ### 3. batch_validate 工具
@@ -88,7 +94,7 @@ npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method
 **参数**:
 - `expressions` (array): 表达式列表，每项格式为 `"expression|expected"` 或 `"expression|expected|decimals"` 或 `"expression|expected|decimals|rounding_strategy"`
 - `default_decimals` (number, 可选): 默认小数位数，默认为2
-- `default_rounding_strategy` (string, 可选): 默认百分比舍入策略
+- `default_rounding_strategy` (string, 可选): 默认百分比舍入策略（仅当表达式包含百分数时有效）
 
 **示例**:
 ```bash

@@ -21,7 +21,7 @@ pub struct CalculateTool {
     pub expression: String,
     /// 计算前和结果要保留的小数位数
     pub decimals: u32,
-    /// 百分比舍入策略：convert_then_round（先转换后舍入）或 round_then_convert（先舍入后转换）
+    /// 百分比舍入策略（仅当表达式包含百分数时有效）：convert_then_round（先转换后舍入）或 round_then_convert（先舍入后转换）
     #[serde(default = "default_rounding_strategy")]
     pub rounding_strategy: String,
 }
@@ -39,11 +39,11 @@ pub struct CalculateTool {
 pub struct ValidateTool {
     /// 要验证的算术表达式（支持千分位分隔符：美式、欧式、空格、撇号格式）
     pub expression: String,
-    /// 预期的结果值
-    pub expected: f64,
+    /// 预期的结果值（支持百分数和千分位格式，如：50.5%, 1,234.56, 1.234,56）
+    pub expected: String,
     /// 要保留的小数位数
     pub decimals: u32,
-    /// 百分比舍入策略：convert_then_round（先转换后舍入）或 round_then_convert（先舍入后转换）
+    /// 百分比舍入策略（仅当表达式或预期值包含百分数时有效）：convert_then_round（先转换后舍入）或 round_then_convert（先舍入后转换）
     #[serde(default = "default_rounding_strategy")]
     pub rounding_strategy: String,
 }
@@ -64,7 +64,7 @@ pub struct BatchValidateTool {
     /// 默认要保留的小数位数（如果表达式中未指定）
     #[serde(default = "default_decimals")]
     pub default_decimals: u32,
-    /// 默认百分比舍入策略（如果表达式中未指定）
+    /// 默认百分比舍入策略（仅当表达式包含百分数时有效，如果表达式中未指定）
     #[serde(default = "default_rounding_strategy")]
     pub default_rounding_strategy: String,
 }
@@ -95,15 +95,6 @@ impl BatchValidateTool {
             }
             
             let expression = parts[0].trim();
-            let expected = match parts[1].trim().parse::<f64>() {
-                Ok(val) => val,
-                Err(_) => {
-                    results.push(format!("❌ 行 {}: 无效的预期值 '{}'", index + 1, parts[1]));
-                    all_passed = false;
-                    continue;
-                }
-            };
-            
             let decimals = if parts.len() > 2 {
                 match parts[2].trim().parse::<u32>() {
                     Ok(val) => val,
@@ -127,6 +118,15 @@ impl BatchValidateTool {
                 Ok(s) => s,
                 Err(_) => {
                     results.push(format!("❌ 行 {}: 无效的舍入策略 '{}'", index + 1, rounding_strategy));
+                    all_passed = false;
+                    continue;
+                }
+            };
+            
+            let expected = match parse_expected_value(parts[1].trim(), decimals, strategy) {
+                Ok(val) => val,
+                Err(_) => {
+                    results.push(format!("❌ 行 {}: 无效的预期值 '{}'", index + 1, parts[1]));
                     all_passed = false;
                     continue;
                 }
@@ -177,6 +177,67 @@ fn parse_rounding_strategy(strategy: &str) -> Result<PercentRounding, CallToolEr
     }
 }
 
+fn parse_expected_value(expected_str: &str, decimals: u32, strategy: PercentRounding) -> Result<f64, CallToolError> {
+    // 使用和计算器相同的逻辑来解析预期值
+    let dummy_expr = expected_str.trim();
+    
+    // 如果包含百分号，需要按照策略处理
+    if dummy_expr.contains('%') {
+        // 创建一个简单的表达式来利用现有的计算逻辑
+        let calc_result = calculate(dummy_expr, decimals, strategy)
+            .map_err(|e| CallToolError::new(crate::error::ServiceError::from(e)))?;
+        Ok(calc_result)
+    } else {
+        // 不包含百分号，使用现有的数字解析逻辑
+        let mut chars = dummy_expr.chars().peekable();
+        let num_str = consume_number_for_expected(&mut chars);
+        
+        if !num_str.is_empty() {
+            let parsed = num_str.parse::<f64>()
+                .map_err(|_| CallToolError::new(crate::error::ServiceError::InvalidExpression(
+                    format!("无法解析预期值: {}", expected_str)
+                )))?;
+            Ok(parsed)
+        } else {
+            Err(CallToolError::new(crate::error::ServiceError::InvalidExpression(
+                format!("无效的预期值格式: {}", expected_str)
+            )))
+        }
+    }
+}
+
+// 辅助函数：为预期值解析数字（复用计算器的逻辑）
+fn consume_number_for_expected(chars: &mut std::iter::Peekable<std::str::Chars>) -> String {
+    use crate::tools::calculator::normalize_number;
+    
+    let mut num_str = String::new();
+    let mut has_digit = false;
+    
+    while let Some(&c) = chars.peek() {
+        if c.is_ascii_digit() {
+            num_str.push(c);
+            has_digit = true;
+            chars.next();
+        } else if (c == '.' || c == ',' || c == ' ' || c == '\'' || c == '-') && has_digit {
+            // 支持负数和千分位分隔符
+            num_str.push(c);
+            chars.next();
+        } else if c == '-' && !has_digit {
+            // 负号在开头
+            num_str.push(c);
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    
+    if has_digit {
+        normalize_number(&num_str)
+    } else {
+        num_str
+    }
+}
+
 impl CalculateTool {
     pub async fn run_tool(
         params: Self,
@@ -200,13 +261,17 @@ impl ValidateTool {
     ) -> Result<CallToolResult, CallToolError> {
         let strategy = parse_rounding_strategy(&params.rounding_strategy)?;
         
-        let is_valid = validate(&params.expression, params.expected, params.decimals, strategy);
+        // 解析预期值，支持百分数和千分位
+        let expected_value = parse_expected_value(&params.expected, params.decimals, strategy)?;
+        
+        let is_valid = validate(&params.expression, expected_value, params.decimals, strategy);
         
         Ok(CallToolResult::text_content(vec![TextContent::from(
             format!(
-                "表达式: {}\n预期值: {}\n验证结果: {}",
+                "表达式: {}\n预期值: {} (解析为: {})\n验证结果: {}",
                 params.expression,
                 params.expected,
+                expected_value,
                 if is_valid { "✓ 通过" } else { "✗ 失败" }
             )
         )]))

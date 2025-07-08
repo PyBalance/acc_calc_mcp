@@ -181,6 +181,16 @@ echo "7.4 测试包含错误的批量验证："
 npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name batch_validate --tool-arg expressions='["1 + 2|3", "2 * 3|7", "10 / 2|5"]' --tool-arg default_decimals=0
 echo
 
+# 测试预期值包含百分数
+echo "7.5 测试预期值包含百分数："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name validate --tool-arg expression="25% + 25%" --tool-arg expected="50%" --tool-arg decimals=2
+echo
+
+# 测试预期值包含千分位
+echo "7.6 测试预期值包含千分位："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name validate --tool-arg expression="500 + 500" --tool-arg expected="1,000" --tool-arg decimals=0
+echo
+
 echo "✓ 所有测试完成！"
 echo
 echo "测试总结："
