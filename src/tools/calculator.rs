@@ -31,16 +31,16 @@ enum Token {
     RightParen,
 }
 
-/// 定义百分比的舍入策略
-/// 用户可以通过这个参数决定如何处理百分比
+/// 定义百分数的处理策略
+/// 用户可以通过这个参数决定如何处理百分数（%符号）
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum PercentRounding {
-    /// 先将数字转换为百分比（除以100），然后再进行舍入。
+    /// 先将百分数除以100转换为小数，然后再进行舍入。
     /// 例如: 50.126% with round 2 -> 0.50126 -> 0.50
-    ConvertThenRound,
-    /// 先对数字进行舍入，然后再转换为百分比（除以100）。
+    DivideBy100ThenRound,
+    /// 先对百分数进行舍入，然后再除以100转换为小数。
     /// 例如: 50.126% with round 2 -> 50.13 -> 0.5013
-    RoundThenConvert,
+    RoundThenDivideBy100,
 }
 
 /// 定义可能出现的错误类型
@@ -146,11 +146,11 @@ fn tokenize_and_round(
                 if let Some('%') = chars.peek() {
                     chars.next(); // consume '%'
                     num = match rounding_strategy {
-                        PercentRounding::ConvertThenRound => {
+                        PercentRounding::DivideBy100ThenRound => {
                             let converted = num / 100.0;
                             round_value(converted, decimals)
                         }
-                        PercentRounding::RoundThenConvert => {
+                        PercentRounding::RoundThenDivideBy100 => {
                             let rounded = round_value(num, decimals);
                             rounded / 100.0
                         }
@@ -180,8 +180,8 @@ fn tokenize_and_round(
                     if let Some('%') = chars.peek() {
                         chars.next(); // consume '%'
                          num = match rounding_strategy {
-                            PercentRounding::ConvertThenRound => round_value(num / 100.0, decimals),
-                            PercentRounding::RoundThenConvert => round_value(num, decimals) / 100.0,
+                            PercentRounding::DivideBy100ThenRound => round_value(num / 100.0, decimals),
+                            PercentRounding::RoundThenDivideBy100 => round_value(num, decimals) / 100.0,
                         };
                     } else {
                         num = round_value(num, decimals);
@@ -412,171 +412,171 @@ mod tests {
 
     #[test]
     fn test_basic_arithmetic() {
-        assert_eq!(calculate("1 + 2", 0, PercentRounding::ConvertThenRound), Ok(3.0));
-        assert_eq!(calculate("5 - 3", 0, PercentRounding::ConvertThenRound), Ok(2.0));
-        assert_eq!(calculate("2 * 3", 0, PercentRounding::ConvertThenRound), Ok(6.0));
-        assert_eq!(calculate("8 / 2", 0, PercentRounding::ConvertThenRound), Ok(4.0));
+        assert_eq!(calculate("1 + 2", 0, PercentRounding::DivideBy100ThenRound), Ok(3.0));
+        assert_eq!(calculate("5 - 3", 0, PercentRounding::DivideBy100ThenRound), Ok(2.0));
+        assert_eq!(calculate("2 * 3", 0, PercentRounding::DivideBy100ThenRound), Ok(6.0));
+        assert_eq!(calculate("8 / 2", 0, PercentRounding::DivideBy100ThenRound), Ok(4.0));
     }
 
     #[test]
     fn test_parentheses() {
-        assert_eq!(calculate("(1 + 2) * 3", 0, PercentRounding::ConvertThenRound), Ok(9.0));
-        assert_eq!(calculate("2 * (3 + 4)", 0, PercentRounding::ConvertThenRound), Ok(14.0));
-        assert_eq!(calculate("((1 + 2) * 3) / 3", 0, PercentRounding::ConvertThenRound), Ok(3.0));
+        assert_eq!(calculate("(1 + 2) * 3", 0, PercentRounding::DivideBy100ThenRound), Ok(9.0));
+        assert_eq!(calculate("2 * (3 + 4)", 0, PercentRounding::DivideBy100ThenRound), Ok(14.0));
+        assert_eq!(calculate("((1 + 2) * 3) / 3", 0, PercentRounding::DivideBy100ThenRound), Ok(3.0));
     }
 
     #[test]
     fn test_operator_precedence() {
-        assert_eq!(calculate("1 + 2 * 3", 0, PercentRounding::ConvertThenRound), Ok(7.0));
-        assert_eq!(calculate("2 * 3 + 1", 0, PercentRounding::ConvertThenRound), Ok(7.0));
-        assert_eq!(calculate("6 / 2 + 1", 0, PercentRounding::ConvertThenRound), Ok(4.0));
+        assert_eq!(calculate("1 + 2 * 3", 0, PercentRounding::DivideBy100ThenRound), Ok(7.0));
+        assert_eq!(calculate("2 * 3 + 1", 0, PercentRounding::DivideBy100ThenRound), Ok(7.0));
+        assert_eq!(calculate("6 / 2 + 1", 0, PercentRounding::DivideBy100ThenRound), Ok(4.0));
     }
 
     #[test]
     fn test_rounding() {
-        assert_eq!(calculate("1.234 + 2.567", 2, PercentRounding::ConvertThenRound), Ok(3.80));
-        assert_eq!(calculate("1.235 + 2.564", 2, PercentRounding::ConvertThenRound), Ok(3.80));
-        assert_eq!(calculate("1.999 + 0.001", 2, PercentRounding::ConvertThenRound), Ok(2.00));
+        assert_eq!(calculate("1.234 + 2.567", 2, PercentRounding::DivideBy100ThenRound), Ok(3.80));
+        assert_eq!(calculate("1.235 + 2.564", 2, PercentRounding::DivideBy100ThenRound), Ok(3.80));
+        assert_eq!(calculate("1.999 + 0.001", 2, PercentRounding::DivideBy100ThenRound), Ok(2.00));
     }
 
     #[test]
     fn test_percentage_convert_then_round() {
-        assert_eq!(calculate("50%", 2, PercentRounding::ConvertThenRound), Ok(0.50));
-        assert_eq!(calculate("50.126%", 2, PercentRounding::ConvertThenRound), Ok(0.50));
-        assert_eq!(calculate("50.126% + 25%", 2, PercentRounding::ConvertThenRound), Ok(0.75));
+        assert_eq!(calculate("50%", 2, PercentRounding::DivideBy100ThenRound), Ok(0.50));
+        assert_eq!(calculate("50.126%", 2, PercentRounding::DivideBy100ThenRound), Ok(0.50));
+        assert_eq!(calculate("50.126% + 25%", 2, PercentRounding::DivideBy100ThenRound), Ok(0.75));
     }
 
     #[test]
     fn test_percentage_round_then_convert() {
-        assert_eq!(calculate("50.126%", 2, PercentRounding::RoundThenConvert), Ok(0.50));
-        assert_eq!(calculate("50.124%", 2, PercentRounding::RoundThenConvert), Ok(0.50));
+        assert_eq!(calculate("50.126%", 2, PercentRounding::RoundThenDivideBy100), Ok(0.50));
+        assert_eq!(calculate("50.124%", 2, PercentRounding::RoundThenDivideBy100), Ok(0.50));
     }
 
     #[test]
     fn test_negative_numbers() {
-        assert_eq!(calculate("-5 + 3", 0, PercentRounding::ConvertThenRound), Ok(-2.0));
-        assert_eq!(calculate("5 + -3", 0, PercentRounding::ConvertThenRound), Ok(2.0));
-        assert_eq!(calculate("-5 * -3", 0, PercentRounding::ConvertThenRound), Ok(15.0));
-        assert_eq!(calculate("(-5) * 3", 0, PercentRounding::ConvertThenRound), Ok(-15.0));
+        assert_eq!(calculate("-5 + 3", 0, PercentRounding::DivideBy100ThenRound), Ok(-2.0));
+        assert_eq!(calculate("5 + -3", 0, PercentRounding::DivideBy100ThenRound), Ok(2.0));
+        assert_eq!(calculate("-5 * -3", 0, PercentRounding::DivideBy100ThenRound), Ok(15.0));
+        assert_eq!(calculate("(-5) * 3", 0, PercentRounding::DivideBy100ThenRound), Ok(-15.0));
     }
 
     #[test]
     fn test_negative_percentage() {
-        assert_eq!(calculate("-50%", 2, PercentRounding::ConvertThenRound), Ok(-0.50));
-        assert_eq!(calculate("-50.126%", 2, PercentRounding::ConvertThenRound), Ok(-0.50));
+        assert_eq!(calculate("-50%", 2, PercentRounding::DivideBy100ThenRound), Ok(-0.50));
+        assert_eq!(calculate("-50.126%", 2, PercentRounding::DivideBy100ThenRound), Ok(-0.50));
     }
 
     #[test]
     fn test_decimal_numbers() {
-        assert_eq!(calculate("1.5 + 2.5", 1, PercentRounding::ConvertThenRound), Ok(4.0));
-        assert_eq!(calculate("3.14 * 2", 2, PercentRounding::ConvertThenRound), Ok(6.28));
-        assert_eq!(calculate("0.1 + 0.2", 1, PercentRounding::ConvertThenRound), Ok(0.3));
+        assert_eq!(calculate("1.5 + 2.5", 1, PercentRounding::DivideBy100ThenRound), Ok(4.0));
+        assert_eq!(calculate("3.14 * 2", 2, PercentRounding::DivideBy100ThenRound), Ok(6.28));
+        assert_eq!(calculate("0.1 + 0.2", 1, PercentRounding::DivideBy100ThenRound), Ok(0.3));
     }
 
     #[test]
     fn test_complex_expressions() {
-        assert_eq!(calculate("(1.5 + 2.5) * 3 - 1", 1, PercentRounding::ConvertThenRound), Ok(11.0));
-        assert_eq!(calculate("100% - 50% + 25%", 2, PercentRounding::ConvertThenRound), Ok(0.75));
-        assert_eq!(calculate("(50% + 25%) * 2", 2, PercentRounding::ConvertThenRound), Ok(1.50));
+        assert_eq!(calculate("(1.5 + 2.5) * 3 - 1", 1, PercentRounding::DivideBy100ThenRound), Ok(11.0));
+        assert_eq!(calculate("100% - 50% + 25%", 2, PercentRounding::DivideBy100ThenRound), Ok(0.75));
+        assert_eq!(calculate("(50% + 25%) * 2", 2, PercentRounding::DivideBy100ThenRound), Ok(1.50));
     }
 
     #[test]
     fn test_division_by_zero() {
-        assert_eq!(calculate("5 / 0", 0, PercentRounding::ConvertThenRound), Err(CalcError::DivisionByZero));
-        assert_eq!(calculate("1 / (2 - 2)", 0, PercentRounding::ConvertThenRound), Err(CalcError::DivisionByZero));
+        assert_eq!(calculate("5 / 0", 0, PercentRounding::DivideBy100ThenRound), Err(CalcError::DivisionByZero));
+        assert_eq!(calculate("1 / (2 - 2)", 0, PercentRounding::DivideBy100ThenRound), Err(CalcError::DivisionByZero));
     }
 
     #[test]
     fn test_invalid_expressions() {
-        assert_eq!(calculate("1 +", 0, PercentRounding::ConvertThenRound), Err(CalcError::InvalidExpression));
-        assert_eq!(calculate("* 2", 0, PercentRounding::ConvertThenRound), Err(CalcError::InvalidExpression));
-        assert_eq!(calculate("1 + + 2", 0, PercentRounding::ConvertThenRound), Err(CalcError::InvalidExpression));
+        assert_eq!(calculate("1 +", 0, PercentRounding::DivideBy100ThenRound), Err(CalcError::InvalidExpression));
+        assert_eq!(calculate("* 2", 0, PercentRounding::DivideBy100ThenRound), Err(CalcError::InvalidExpression));
+        assert_eq!(calculate("1 + + 2", 0, PercentRounding::DivideBy100ThenRound), Err(CalcError::InvalidExpression));
     }
 
     #[test]
     fn test_mismatched_parentheses() {
-        assert_eq!(calculate("(1 + 2", 0, PercentRounding::ConvertThenRound), Err(CalcError::MismatchedParens));
-        assert_eq!(calculate("1 + 2)", 0, PercentRounding::ConvertThenRound), Err(CalcError::MismatchedParens));
-        assert_eq!(calculate("((1 + 2)", 0, PercentRounding::ConvertThenRound), Err(CalcError::MismatchedParens));
+        assert_eq!(calculate("(1 + 2", 0, PercentRounding::DivideBy100ThenRound), Err(CalcError::MismatchedParens));
+        assert_eq!(calculate("1 + 2)", 0, PercentRounding::DivideBy100ThenRound), Err(CalcError::MismatchedParens));
+        assert_eq!(calculate("((1 + 2)", 0, PercentRounding::DivideBy100ThenRound), Err(CalcError::MismatchedParens));
     }
 
     #[test]
     fn test_invalid_characters() {
-        assert_eq!(calculate("1 + 2 @", 0, PercentRounding::ConvertThenRound), Err(CalcError::InvalidCharacter('@')));
-        assert_eq!(calculate("1 & 2", 0, PercentRounding::ConvertThenRound), Err(CalcError::InvalidCharacter('&')));
+        assert_eq!(calculate("1 + 2 @", 0, PercentRounding::DivideBy100ThenRound), Err(CalcError::InvalidCharacter('@')));
+        assert_eq!(calculate("1 & 2", 0, PercentRounding::DivideBy100ThenRound), Err(CalcError::InvalidCharacter('&')));
     }
 
     #[test]
     fn test_whitespace_handling() {
-        assert_eq!(calculate("  1  +  2  ", 0, PercentRounding::ConvertThenRound), Ok(3.0));
-        assert_eq!(calculate("1\t+\t2", 0, PercentRounding::ConvertThenRound), Ok(3.0));
-        assert_eq!(calculate("1\n+\n2", 0, PercentRounding::ConvertThenRound), Ok(3.0));
+        assert_eq!(calculate("  1  +  2  ", 0, PercentRounding::DivideBy100ThenRound), Ok(3.0));
+        assert_eq!(calculate("1\t+\t2", 0, PercentRounding::DivideBy100ThenRound), Ok(3.0));
+        assert_eq!(calculate("1\n+\n2", 0, PercentRounding::DivideBy100ThenRound), Ok(3.0));
     }
 
     #[test]
     fn test_validate_function() {
-        assert!(validate("1 + 2", 3.0, 0, PercentRounding::ConvertThenRound));
-        assert!(validate("1.234 + 2.567", 3.80, 2, PercentRounding::ConvertThenRound));
-        assert!(!validate("1 + 2", 4.0, 0, PercentRounding::ConvertThenRound));
-        assert!(!validate("1 / 0", 0.0, 0, PercentRounding::ConvertThenRound));
+        assert!(validate("1 + 2", 3.0, 0, PercentRounding::DivideBy100ThenRound));
+        assert!(validate("1.234 + 2.567", 3.80, 2, PercentRounding::DivideBy100ThenRound));
+        assert!(!validate("1 + 2", 4.0, 0, PercentRounding::DivideBy100ThenRound));
+        assert!(!validate("1 / 0", 0.0, 0, PercentRounding::DivideBy100ThenRound));
     }
 
     #[test]
     fn test_floating_point_precision() {
         // Test that we handle floating point precision issues properly
-        assert!(validate("0.1 + 0.2", 0.3, 1, PercentRounding::ConvertThenRound));
-        assert!(validate("0.1 + 0.1 + 0.1", 0.3, 1, PercentRounding::ConvertThenRound));
+        assert!(validate("0.1 + 0.2", 0.3, 1, PercentRounding::DivideBy100ThenRound));
+        assert!(validate("0.1 + 0.1 + 0.1", 0.3, 1, PercentRounding::DivideBy100ThenRound));
     }
 
     #[test]
     fn test_thousand_separators() {
         // 美式格式：逗号作为千分位分隔符
-        assert_eq!(calculate("1,234.56 + 2,000.44", 2, PercentRounding::ConvertThenRound), Ok(3235.00));
+        assert_eq!(calculate("1,234.56 + 2,000.44", 2, PercentRounding::DivideBy100ThenRound), Ok(3235.00));
         
         // 欧式格式：点号作为千分位分隔符，逗号作为小数点
-        assert_eq!(calculate("1.234,56 + 2.000,44", 2, PercentRounding::ConvertThenRound), Ok(3235.00));
+        assert_eq!(calculate("1.234,56 + 2.000,44", 2, PercentRounding::DivideBy100ThenRound), Ok(3235.00));
         
         // 大数字测试
-        assert_eq!(calculate("1,000,000.00 + 500,000.00", 0, PercentRounding::ConvertThenRound), Ok(1500000.0));
-        assert_eq!(calculate("1.000.000,50 + 500.000,25", 2, PercentRounding::ConvertThenRound), Ok(1500000.75));
+        assert_eq!(calculate("1,000,000.00 + 500,000.00", 0, PercentRounding::DivideBy100ThenRound), Ok(1500000.0));
+        assert_eq!(calculate("1.000.000,50 + 500.000,25", 2, PercentRounding::DivideBy100ThenRound), Ok(1500000.75));
     }
 
     #[test]
     fn test_thousand_separators_edge_cases() {
         // 只有一个逗号，判断为小数点（欧式）
-        assert_eq!(calculate("123,45 + 100", 2, PercentRounding::ConvertThenRound), Ok(223.45));
+        assert_eq!(calculate("123,45 + 100", 2, PercentRounding::DivideBy100ThenRound), Ok(223.45));
         
         // 只有一个点号，判断为小数点（美式）
-        assert_eq!(calculate("123.45 + 100", 2, PercentRounding::ConvertThenRound), Ok(223.45));
+        assert_eq!(calculate("123.45 + 100", 2, PercentRounding::DivideBy100ThenRound), Ok(223.45));
         
         // 复杂表达式中的千分位
-        assert_eq!(calculate("(1,234.56 + 2,000.44) / 2", 2, PercentRounding::ConvertThenRound), Ok(1617.50));
+        assert_eq!(calculate("(1,234.56 + 2,000.44) / 2", 2, PercentRounding::DivideBy100ThenRound), Ok(1617.50));
     }
 
     #[test]
     fn test_thousand_separators_with_percentage() {
         // 千分位分隔符与百分号结合（简化测试）
-        assert_eq!(calculate("100% + 50%", 2, PercentRounding::ConvertThenRound), Ok(1.50));
-        assert_eq!(calculate("1,234.56% / 100", 4, PercentRounding::ConvertThenRound), Ok(0.1235));
+        assert_eq!(calculate("100% + 50%", 2, PercentRounding::DivideBy100ThenRound), Ok(1.50));
+        assert_eq!(calculate("1,234.56% / 100", 4, PercentRounding::DivideBy100ThenRound), Ok(0.1235));
     }
 
     #[test]
     fn test_mixed_number_formats() {
         // 测试在同一表达式中混合使用不同格式
         // 美式 + 欧式
-        assert_eq!(calculate("1,234.56 + 1.000,44", 2, PercentRounding::ConvertThenRound), Ok(2235.00));
+        assert_eq!(calculate("1,234.56 + 1.000,44", 2, PercentRounding::DivideBy100ThenRound), Ok(2235.00));
         
         // 美式 + 简单数字
-        assert_eq!(calculate("1,234.56 + 100", 2, PercentRounding::ConvertThenRound), Ok(1334.56));
+        assert_eq!(calculate("1,234.56 + 100", 2, PercentRounding::DivideBy100ThenRound), Ok(1334.56));
         
         // 欧式 + 简单数字
-        assert_eq!(calculate("1.234,56 + 100", 2, PercentRounding::ConvertThenRound), Ok(1334.56));
+        assert_eq!(calculate("1.234,56 + 100", 2, PercentRounding::DivideBy100ThenRound), Ok(1334.56));
         
         // 复杂混合表达式
-        assert_eq!(calculate("(1,234.56 + 1.000,44) * 0.5", 2, PercentRounding::ConvertThenRound), Ok(1117.50));
+        assert_eq!(calculate("(1,234.56 + 1.000,44) * 0.5", 2, PercentRounding::DivideBy100ThenRound), Ok(1117.50));
         
         // 混合格式与百分比
-        assert_eq!(calculate("1,234.56 + 10% * 1.000,00", 2, PercentRounding::ConvertThenRound), Ok(1334.56));
+        assert_eq!(calculate("1,234.56 + 10% * 1.000,00", 2, PercentRounding::DivideBy100ThenRound), Ok(1334.56));
     }
 
     #[test]
@@ -595,7 +595,7 @@ mod tests {
             let parts: Vec<&str> = expr.split('|').collect();
             let expression = parts[0];
             let expected: f64 = parts[1].parse().unwrap();
-            assert!(validate(expression, expected, 0, PercentRounding::ConvertThenRound));
+            assert!(validate(expression, expected, 0, PercentRounding::DivideBy100ThenRound));
         }
         
         // 带小数位的批量验证
@@ -609,7 +609,7 @@ mod tests {
             let expression = parts[0];
             let expected: f64 = parts[1].parse().unwrap();
             let decimals: u32 = parts[2].parse().unwrap();
-            assert!(validate(expression, expected, decimals, PercentRounding::ConvertThenRound));
+            assert!(validate(expression, expected, decimals, PercentRounding::DivideBy100ThenRound));
         }
     }
 
@@ -618,15 +618,15 @@ mod tests {
         // 测试预期值包含百分数的情况
         
         // 表达式和预期值都包含百分数
-        assert!(validate("50%", 0.5, 2, PercentRounding::ConvertThenRound));
-        assert!(validate("50.126%", 0.5, 2, PercentRounding::ConvertThenRound));
+        assert!(validate("50%", 0.5, 2, PercentRounding::DivideBy100ThenRound));
+        assert!(validate("50.126%", 0.5, 2, PercentRounding::DivideBy100ThenRound));
         
         // 不同的舍入策略
-        assert!(validate("50.126%", 0.50, 2, PercentRounding::ConvertThenRound));
-        assert!(validate("50.126%", 0.50, 2, PercentRounding::RoundThenConvert));
+        assert!(validate("50.126%", 0.50, 2, PercentRounding::DivideBy100ThenRound));
+        assert!(validate("50.126%", 0.50, 2, PercentRounding::RoundThenDivideBy100));
         
         // 复杂表达式与百分数预期值
-        assert!(validate("25% + 25%", 0.5, 2, PercentRounding::ConvertThenRound));
+        assert!(validate("25% + 25%", 0.5, 2, PercentRounding::DivideBy100ThenRound));
     }
 
     #[test]
@@ -634,13 +634,13 @@ mod tests {
         // 测试预期值包含千分位分隔符的情况
         
         // 美式千分位
-        assert!(validate("1000 + 234.56", 1234.56, 2, PercentRounding::ConvertThenRound));
+        assert!(validate("1000 + 234.56", 1234.56, 2, PercentRounding::DivideBy100ThenRound));
         
         // 大数字验证
-        assert!(validate("500000 + 500000", 1000000.0, 0, PercentRounding::ConvertThenRound));
+        assert!(validate("500000 + 500000", 1000000.0, 0, PercentRounding::DivideBy100ThenRound));
         
         // 负数验证
-        assert!(validate("100 - 200", -100.0, 0, PercentRounding::ConvertThenRound));
+        assert!(validate("100 - 200", -100.0, 0, PercentRounding::DivideBy100ThenRound));
     }
 
     #[test]
@@ -648,19 +648,19 @@ mod tests {
         // 测试混合格式的预期值
         
         // 百分数表达式，千分位预期值（这种情况应该根据预期值格式解析）
-        assert!(validate("1% * 100", 1.0, 2, PercentRounding::ConvertThenRound));
+        assert!(validate("1% * 100", 1.0, 2, PercentRounding::DivideBy100ThenRound));
         
         // 验证舍入逻辑：0.5 在 decimals=0 时会被舍入为 1
-        let result = calculate("0.5 * 100", 0, PercentRounding::ConvertThenRound).unwrap();
+        let result = calculate("0.5 * 100", 0, PercentRounding::DivideBy100ThenRound).unwrap();
         assert_eq!(result, 100.0); // 0.5 舍入为 1，所以 1 * 100 = 100
         
         // 正确的测试：使用足够的小数位数
-        assert!(validate("0.5 * 100", 50.0, 1, PercentRounding::ConvertThenRound));
+        assert!(validate("0.5 * 100", 50.0, 1, PercentRounding::DivideBy100ThenRound));
         
         // 复杂混合情况
-        assert!(validate("1,000.00 / 10", 100.0, 2, PercentRounding::ConvertThenRound));
+        assert!(validate("1,000.00 / 10", 100.0, 2, PercentRounding::DivideBy100ThenRound));
         
         // 测试整数情况
-        assert!(validate("50 * 2", 100.0, 0, PercentRounding::ConvertThenRound));
+        assert!(validate("50 * 2", 100.0, 0, PercentRounding::DivideBy100ThenRound));
     }
 }

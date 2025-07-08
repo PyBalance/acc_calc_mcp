@@ -21,9 +21,9 @@ pub struct CalculateTool {
     pub expression: String,
     /// 计算前和结果要保留的小数位数
     pub decimals: u32,
-    /// 百分比舍入策略（仅当表达式包含百分数时有效）：convert_then_round（先转换后舍入）或 round_then_convert（先舍入后转换）
-    #[serde(default = "default_rounding_strategy")]
-    pub rounding_strategy: String,
+    /// 百分数处理策略（仅当表达式包含百分数时有效）：divide_by_100_then_round（先除以100后舍入）或 round_then_divide_by_100（先舍入后除以100），默认是 divide_by_100_then_round
+    #[serde(default = "default_percent_rounding")]
+    pub percent_rounding: String,
 }
 
 #[mcp_tool(
@@ -43,9 +43,9 @@ pub struct ValidateTool {
     pub expected: String,
     /// 要保留的小数位数
     pub decimals: u32,
-    /// 百分比舍入策略（仅当表达式或预期值包含百分数时有效）：convert_then_round（先转换后舍入）或 round_then_convert（先舍入后转换）
-    #[serde(default = "default_rounding_strategy")]
-    pub rounding_strategy: String,
+    /// 百分数处理策略（仅当表达式或预期值包含百分数时有效）：divide_by_100_then_round（先除以100后舍入）或 round_then_divide_by_100（先舍入后除以100), 默认是 divide_by_100_then_round
+    #[serde(default = "default_percent_rounding")]
+    pub percent_rounding: String,
 }
 
 #[mcp_tool(
@@ -59,22 +59,22 @@ pub struct ValidateTool {
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct BatchValidateTool {
-    /// 要验证的表达式列表，格式为 "expression|expected" 或 "expression|expected|decimals" 或 "expression|expected|decimals|rounding_strategy"
+    /// 要验证的表达式列表，格式为 "expression|expected" 或 "expression|expected|decimals" 或 "expression|expected|decimals|percent_rounding"
     pub expressions: Vec<String>,
     /// 默认要保留的小数位数（如果表达式中未指定）
     #[serde(default = "default_decimals")]
     pub default_decimals: u32,
-    /// 默认百分比舍入策略（仅当表达式包含百分数时有效，如果表达式中未指定）
-    #[serde(default = "default_rounding_strategy")]
-    pub default_rounding_strategy: String,
+    /// 默认百分数处理策略（仅当表达式包含百分数时有效，如果表达式中未指定）：divide_by_100_then_round（先除以100后舍入）或 round_then_divide_by_100（先舍入后除以100），默认是 divide_by_100_then_round
+    #[serde(default = "default_percent_rounding")]
+    pub default_percent_rounding: String,
 }
 
 fn default_decimals() -> u32 {
     2
 }
 
-fn default_rounding_strategy() -> String {
-    "convert_then_round".to_string()
+fn default_percent_rounding() -> String {
+    "divide_by_100_then_round".to_string()
 }
 
 impl BatchValidateTool {
@@ -108,16 +108,16 @@ impl BatchValidateTool {
                 params.default_decimals
             };
             
-            let rounding_strategy = if parts.len() > 3 {
+            let percent_rounding = if parts.len() > 3 {
                 parts[3].trim().to_string()
             } else {
-                params.default_rounding_strategy.clone()
+                params.default_percent_rounding.clone()
             };
             
-            let strategy = match parse_rounding_strategy(&rounding_strategy) {
+            let strategy = match parse_percent_rounding(&percent_rounding) {
                 Ok(s) => s,
                 Err(_) => {
-                    results.push(format!("❌ 行 {}: 无效的舍入策略 '{}'", index + 1, rounding_strategy));
+                    results.push(format!("❌ 行 {}: 无效的百分数处理策略 '{}'", index + 1, percent_rounding));
                     all_passed = false;
                     continue;
                 }
@@ -167,12 +167,12 @@ impl BatchValidateTool {
     }
 }
 
-fn parse_rounding_strategy(strategy: &str) -> Result<PercentRounding, CallToolError> {
+fn parse_percent_rounding(strategy: &str) -> Result<PercentRounding, CallToolError> {
     match strategy {
-        "convert_then_round" => Ok(PercentRounding::ConvertThenRound),
-        "round_then_convert" => Ok(PercentRounding::RoundThenConvert),
+        "divide_by_100_then_round" => Ok(PercentRounding::DivideBy100ThenRound),
+        "round_then_divide_by_100" => Ok(PercentRounding::RoundThenDivideBy100),
         _ => Err(CallToolError::new(crate::error::ServiceError::InvalidExpression(
-            format!("无效的舍入策略: {}，支持的策略：convert_then_round, round_then_convert", strategy)
+            format!("无效的百分数处理策略: {}，支持的策略：divide_by_100_then_round, round_then_divide_by_100", strategy)
         ))),
     }
 }
@@ -243,7 +243,7 @@ impl CalculateTool {
         params: Self,
         _context: &(),
     ) -> Result<CallToolResult, CallToolError> {
-        let strategy = parse_rounding_strategy(&params.rounding_strategy)?;
+        let strategy = parse_percent_rounding(&params.percent_rounding)?;
         
         let result = calculate(&params.expression, params.decimals, strategy)
             .map_err(|e| CallToolError::new(crate::error::ServiceError::from(e)))?;
@@ -259,7 +259,7 @@ impl ValidateTool {
         params: Self,
         _context: &(),
     ) -> Result<CallToolResult, CallToolError> {
-        let strategy = parse_rounding_strategy(&params.rounding_strategy)?;
+        let strategy = parse_percent_rounding(&params.percent_rounding)?;
         
         // 解析预期值，支持百分数和千分位
         let expected_value = parse_expected_value(&params.expected, params.decimals, strategy)?;
