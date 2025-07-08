@@ -1,4 +1,4 @@
-name: Rust
+name: Rust CI
 
 on:
   push:
@@ -10,18 +10,37 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
-    runs-on: windows-latest
+  build_and_test:
+    strategy:
+      matrix:
+        # 添加 windows-latest 到矩阵中
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose --release
+
+    - name: Build for release
+      run: cargo build --release --verbose
+
     - name: Run tests
-      run: cargo test --verbose
-    - name: Upload artifacts
+      run: cargo test --release --verbose
+      
+    # ---- Linux & macOS ----
+    # 如果操作系统不是 Windows，则运行此步骤
+    - name: Upload Artifact (Linux/macOS)
+      if: runner.os != 'Windows'
       uses: actions/upload-artifact@v4
       with:
-        name: acc-calc-mcp-windows
+        name: acc_calc_mcp-${{ matrix.os }}
+        path: target/release/acc_calc_mcp
+        
+    # ---- Windows ----
+    # 如果操作系统是 Windows，则运行此步骤
+    - name: Upload Artifact (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: acc_calc_mcp-${{ matrix.os }}
         path: target/release/acc_calc_mcp.exe
