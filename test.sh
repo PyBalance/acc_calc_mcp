@@ -117,15 +117,46 @@ echo "5.3 测试浮点精度 (0.1 + 0.2)："
 npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name calculate --tool-arg expression="0.1 + 0.2" --tool-arg decimals=1
 echo
 
+echo "6. 测试千分位分隔符..."
+
+# 测试美式千分位格式
+echo "6.1 测试美式千分位格式 (1,234 + 2,567)："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name calculate --tool-arg expression="1,234 + 2,567" --tool-arg decimals=0
+echo
+
+# 测试美式千分位带小数
+echo "6.2 测试美式千分位带小数 (1,234.56 + 2,000.44)："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name calculate --tool-arg expression="1,234.56 + 2,000.44" --tool-arg decimals=2
+echo
+
+# 测试欧式千分位格式
+echo "6.3 测试欧式千分位格式 (1.234,56 + 2.000,44)："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name calculate --tool-arg expression="1.234,56 + 2.000,44" --tool-arg decimals=2
+echo
+
+# 测试空格千分位格式
+echo "6.4 测试空格千分位格式 (1 234 567 + 500 000)："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name calculate --tool-arg expression="1 234 567 + 500 000" --tool-arg decimals=0
+echo
+
+# 测试撇号千分位格式
+echo "6.5 测试撇号千分位格式 (1'234'567.89 * 2)："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name calculate --tool-arg expression="1'234'567.89 * 2" --tool-arg decimals=2
+echo
+
+# 测试千分位验证
+echo "6.6 测试千分位验证 (1,000,000 + 500,000 = 1,500,000)："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name validate --tool-arg expression="1,000,000.00 + 500,000.00" --tool-arg expected=1500000.0 --tool-arg decimals=0
+echo
+
+# 测试混合格式
+echo "6.7 测试混合格式 (美式 + 欧式: 1,234.56 + 1.000,44)："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name calculate --tool-arg expression="1,234.56 + 1.000,44" --tool-arg decimals=2
+echo
+
+# 测试混合格式与百分比
+echo "6.8 测试混合格式与百分比 (1,234.56 + 10% * 1.000,00)："
+npx @modelcontextprotocol/inspector --cli "$SERVER_CMD" --method tools/call --tool-name calculate --tool-arg expression="1,234.56 + 10% * 1.000,00" --tool-arg decimals=2
+echo
+
 echo "✓ 所有测试完成！"
-echo
-echo "测试总结："
-echo "- 基本算术运算: ✓"
-echo "- 小数处理和舍入: ✓"
-echo "- 百分比计算: ✓"
-echo "- 复杂表达式: ✓"
-echo "- 验证功能: ✓"
-echo "- 错误处理: ✓"
-echo "- 高级功能: ✓"
-echo
-echo "算术表达式计算器 MCP 服务器已准备就绪！"

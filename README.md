@@ -7,6 +7,7 @@
 - 🧮 **完整的算术运算**: 支持加、减、乘、除、括号和百分号
 - 🎯 **精确的舍入控制**: 支持指定小数位数的四舍五入
 - 📊 **灵活的百分比处理**: 两种舍入策略（先转换后舍入 vs 先舍入后转换）
+- 🌍 **多格式千分位支持**: 美式 (1,234.56)、欧式 (1.234,56)、空格 (1 234.56)、撇号 (1'234.56)
 - ✅ **表达式验证**: 验证计算结果是否与预期值相符
 - 🔧 **标准 MCP 协议**: 与任何支持 MCP 的客户端兼容
 
@@ -40,7 +41,7 @@ cargo run
 计算算术表达式并返回结果。
 
 **参数**:
-- `expression` (string): 要计算的算术表达式
+- `expression` (string): 要计算的算术表达式（支持多种千分位格式）
 - `decimals` (number): 要保留的小数位数
 - `rounding_strategy` (string, 可选): 百分比舍入策略
   - `"convert_then_round"` (默认): 先转换为小数后舍入
@@ -56,6 +57,12 @@ npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method
 
 # 百分比计算
 npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name calculate --tool-arg expression="50.126%" --tool-arg decimals=2 --tool-arg rounding_strategy="convert_then_round"
+
+# 千分位分隔符计算
+npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name calculate --tool-arg expression="1,234.56 + 2,000.44" --tool-arg decimals=2
+
+# 欧式格式
+npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method tools/call --tool-name calculate --tool-arg expression="1.234,56 + 2.000,44" --tool-arg decimals=2
 ```
 
 ### 2. validate 工具
@@ -63,7 +70,7 @@ npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method
 验证算术表达式的计算结果是否与预期值相符。
 
 **参数**:
-- `expression` (string): 要验证的算术表达式
+- `expression` (string): 要验证的算术表达式（支持多种千分位格式）
 - `expected` (number): 预期的结果值
 - `decimals` (number): 要保留的小数位数
 - `rounding_strategy` (string, 可选): 百分比舍入策略
@@ -86,6 +93,7 @@ npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method
 - 基本算术运算
 - 小数处理和舍入
 - 百分比计算（两种策略）
+- 千分位分隔符（四种格式）
 - 复杂表达式
 - 验证功能
 - 错误处理
@@ -135,6 +143,20 @@ npx @modelcontextprotocol/inspector --cli ./target/release/acc_calc_mcp --method
 - `/` 除法
 - `()` 括号（支持嵌套）
 - `%` 百分号
+
+## 支持的数字格式
+
+### 千分位分隔符
+- **美式格式**: `1,234.56` (逗号分隔千位，点号小数点)
+- **欧式格式**: `1.234,56` (点号分隔千位，逗号小数点)
+- **空格格式**: `1 234.56` (空格分隔千位)
+- **撇号格式**: `1'234.56` (撇号分隔千位)
+
+### 格式检测规则
+- 自动检测数字格式，无需指定
+- 支持大数字：`1,000,000` 或 `1.000.000,00`
+- 智能区分千分位分隔符和小数点
+- 混合格式在同一表达式中使用
 
 ## 错误处理
 

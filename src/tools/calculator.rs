@@ -138,7 +138,7 @@ fn tokenize_and_round(
 
     while let Some(&c) = chars.peek() {
         match c {
-            '0'..='9' | '.' => {
+            '0'..='9' => {
                 let num_str = consume_number(&mut chars);
                 let mut num = num_str.parse::<f64>().map_err(|_| CalcError::InvalidExpression)?;
 
@@ -219,18 +219,107 @@ fn tokenize_and_round(
     Ok(tokens)
 }
 
-/// 辅助函数：从字符流中消费一个完整的数字字符串
+/// 辅助函数：从字符流中消费一个完整的数字字符串（支持千分位分隔符）
 fn consume_number(chars: &mut Peekable<Chars>) -> String {
     let mut num_str = String::new();
+    let mut has_digit = false;
+    
     while let Some(&c) = chars.peek() {
-        if c.is_ascii_digit() || c == '.' {
+        if c.is_ascii_digit() {
+            num_str.push(c);
+            has_digit = true;
+            chars.next();
+        } else if (c == '.' || c == ',' || c == ' ' || c == '\'') && has_digit {
+            // 只有在已经有数字的情况下才消费分隔符
             num_str.push(c);
             chars.next();
         } else {
             break;
         }
     }
-    num_str
+    
+    if has_digit {
+        normalize_number(&num_str)
+    } else {
+        num_str
+    }
+}
+
+/// 辅助函数：标准化数字字符串，移除千分位分隔符并处理不同的小数点格式
+fn normalize_number(input: &str) -> String {
+    if input.is_empty() {
+        return input.to_string();
+    }
+    
+    // 简化的格式检测逻辑
+    let cleaned = input.trim();
+    
+    // 如果包含逗号和点号，判断哪个是小数点
+    if cleaned.contains(',') && cleaned.contains('.') {
+        let last_comma = cleaned.rfind(',').unwrap();
+        let last_dot = cleaned.rfind('.').unwrap();
+        
+        if last_dot > last_comma {
+            // 美式: 1,234.56 - 点号是小数点
+            remove_thousand_separators(cleaned, &[',', '\'', ' '])
+        } else {
+            // 欧式: 1.234,56 - 逗号是小数点
+            let mut result = remove_thousand_separators(cleaned, &['.', '\'', ' ']);
+            result = result.replace(',', ".");
+            result
+        }
+    } else if cleaned.contains(',') {
+        // 只有逗号 - 检查是否为小数点
+        let comma_count = cleaned.matches(',').count();
+        if comma_count == 1 {
+            let parts: Vec<&str> = cleaned.split(',').collect();
+            if parts.len() == 2 && parts[1].len() <= 3 && parts[1].chars().all(|c| c.is_ascii_digit()) {
+                // 很可能是欧式小数点
+                cleaned.replace(',', ".")
+            } else {
+                // 千分位分隔符
+                remove_thousand_separators(cleaned, &[',', '\'', ' '])
+            }
+        } else {
+            // 多个逗号，必然是千分位
+            remove_thousand_separators(cleaned, &[',', '\'', ' '])
+        }
+    } else if cleaned.contains('.') {
+        // 只有点号 - 检查是否为千分位分隔符
+        let dot_count = cleaned.matches('.').count();
+        if dot_count == 1 {
+            // 单个点号，很可能是小数点
+            cleaned.to_string()
+        } else {
+            // 多个点号，检查最后一个是否为小数点
+            let parts: Vec<&str> = cleaned.split('.').collect();
+            if let Some(last_part) = parts.last() {
+                if last_part.len() <= 3 && last_part.chars().all(|c| c.is_ascii_digit()) {
+                    // 最后部分像小数
+                    let before_last_dot = &cleaned[..cleaned.rfind('.').unwrap()];
+                    let cleaned_before = remove_thousand_separators(before_last_dot, &['.', '\'', ' ']);
+                    format!("{}.{}", cleaned_before, last_part)
+                } else {
+                    // 全部是千分位
+                    remove_thousand_separators(cleaned, &['.', '\'', ' '])
+                }
+            } else {
+                cleaned.to_string()
+            }
+        }
+    } else {
+        // 只有空格或撇号
+        remove_thousand_separators(cleaned, &['\'', ' '])
+    }
+}
+
+/// 移除千分位分隔符
+fn remove_thousand_separators(input: &str, separators: &[char]) -> String {
+    let mut result = input.to_string();
+    for &sep in separators {
+        result = result.replace(sep, "");
+    }
+    result
 }
 
 
@@ -437,5 +526,56 @@ mod tests {
         // Test that we handle floating point precision issues properly
         assert!(validate("0.1 + 0.2", 0.3, 1, PercentRounding::ConvertThenRound));
         assert!(validate("0.1 + 0.1 + 0.1", 0.3, 1, PercentRounding::ConvertThenRound));
+    }
+
+    #[test]
+    fn test_thousand_separators() {
+        // 美式格式：逗号作为千分位分隔符
+        assert_eq!(calculate("1,234.56 + 2,000.44", 2, PercentRounding::ConvertThenRound), Ok(3235.00));
+        
+        // 欧式格式：点号作为千分位分隔符，逗号作为小数点
+        assert_eq!(calculate("1.234,56 + 2.000,44", 2, PercentRounding::ConvertThenRound), Ok(3235.00));
+        
+        // 大数字测试
+        assert_eq!(calculate("1,000,000.00 + 500,000.00", 0, PercentRounding::ConvertThenRound), Ok(1500000.0));
+        assert_eq!(calculate("1.000.000,50 + 500.000,25", 2, PercentRounding::ConvertThenRound), Ok(1500000.75));
+    }
+
+    #[test]
+    fn test_thousand_separators_edge_cases() {
+        // 只有一个逗号，判断为小数点（欧式）
+        assert_eq!(calculate("123,45 + 100", 2, PercentRounding::ConvertThenRound), Ok(223.45));
+        
+        // 只有一个点号，判断为小数点（美式）
+        assert_eq!(calculate("123.45 + 100", 2, PercentRounding::ConvertThenRound), Ok(223.45));
+        
+        // 复杂表达式中的千分位
+        assert_eq!(calculate("(1,234.56 + 2,000.44) / 2", 2, PercentRounding::ConvertThenRound), Ok(1617.50));
+    }
+
+    #[test]
+    fn test_thousand_separators_with_percentage() {
+        // 千分位分隔符与百分号结合（简化测试）
+        assert_eq!(calculate("100% + 50%", 2, PercentRounding::ConvertThenRound), Ok(1.50));
+        assert_eq!(calculate("1,234.56% / 100", 4, PercentRounding::ConvertThenRound), Ok(0.1235));
+    }
+
+    #[test]
+    fn test_mixed_number_formats() {
+        // 测试在同一表达式中混合使用不同格式
+        // 美式 + 欧式
+        assert_eq!(calculate("1,234.56 + 1.000,44", 2, PercentRounding::ConvertThenRound), Ok(2235.00));
+        
+        // 美式 + 简单数字
+        assert_eq!(calculate("1,234.56 + 100", 2, PercentRounding::ConvertThenRound), Ok(1334.56));
+        
+        // 欧式 + 简单数字
+        assert_eq!(calculate("1.234,56 + 100", 2, PercentRounding::ConvertThenRound), Ok(1334.56));
+        
+        // 复杂混合表达式
+        assert_eq!(calculate("(1,234.56 + 1.000,44) * 0.5", 2, PercentRounding::ConvertThenRound), Ok(1117.50));
+        
+        // 混合格式与百分比
+        assert_eq!(calculate("1,234.56 + 10% * 1.000,00", 2, PercentRounding::ConvertThenRound), Ok(1334.56));
     }
 }

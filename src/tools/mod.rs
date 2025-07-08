@@ -9,7 +9,7 @@ pub use rust_mcp_sdk::tool_box;
 #[mcp_tool(
     name = "calculate",
     title = "计算算术表达式",
-    description = "给定任何符合规范的算式（运算符支持：加、减、乘、除、括号和百分号），其中的数字可以保留任意的小数位数，将可以参加运算。运算特点：1. 所有数字在参与运算前，根据指定小数位数进行四舍五入；2. 计算结果也需要进行最终的四舍五入；3. 计算过程不进行四舍五入。",
+    description = "给定任何符合规范的算式（运算符支持：加、减、乘、除、括号和百分号），支持千分位分隔符（美式: 1,234.56, 欧式: 1.234,56, 空格: 1 234.56, 撇号: 1'234.56）。运算特点：1. 所有数字在参与运算前，根据指定小数位数进行四舍五入；2. 计算结果也需要进行最终的四舍五入；3. 计算过程不进行四舍五入。",
     destructive_hint = false,
     idempotent_hint = true,
     open_world_hint = false,
@@ -17,7 +17,7 @@ pub use rust_mcp_sdk::tool_box;
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct CalculateTool {
-    /// 要计算的算术表达式（运算符支持：加、减、乘、除、括号和百分号），其中的数字可以保留任意的小数位数
+    /// 要计算的算术表达式（运算符支持：加、减、乘、除、括号和百分号），支持千分位分隔符（美式: 1,234.56, 欧式: 1.234,56, 空格: 1 234.56, 撇号: 1'234.56）
     pub expression: String,
     /// 计算前和结果要保留的小数位数
     pub decimals: u32,
@@ -29,7 +29,7 @@ pub struct CalculateTool {
 #[mcp_tool(
     name = "validate",
     title = "验证算术表达式",
-    description = "验证给定算式的计算结果是否与预期值相符（运算符支持：加、减、乘、除、括号和百分号），其中的数字可以保留任意的小数位数。验证过程遵循与计算工具相同的运算规则：1. 所有数字在参与运算前，根据指定小数位数进行四舍五入；2. 计算结果也需要进行最终的四舍五入；3. 计算过程不进行四舍五入。",
+    description = "验证给定算式的计算结果是否与预期值相符（运算符支持：加、减、乘、除、括号和百分号），支持千分位分隔符（美式、欧式、空格、撇号格式）。验证过程遵循与计算工具相同的运算规则：1. 所有数字在参与运算前，根据指定小数位数进行四舍五入；2. 计算结果也需要进行最终的四舍五入；3. 计算过程不进行四舍五入。",
     destructive_hint = false,
     idempotent_hint = true,
     open_world_hint = false,
@@ -37,7 +37,7 @@ pub struct CalculateTool {
 )]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct ValidateTool {
-    /// 要验证的算术表达式
+    /// 要验证的算术表达式（支持千分位分隔符：美式、欧式、空格、撇号格式）
     pub expression: String,
     /// 预期的结果值
     pub expected: f64,
