@@ -1,0 +1,27 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --verbose --release
+    - name: Run tests
+      run: cargo test --verbose
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: acc-calc-mcp-windows
+        path: target/release/acc_calc_mcp.exe
